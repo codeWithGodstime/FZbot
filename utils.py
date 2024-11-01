@@ -64,3 +64,47 @@ def download_file(url, local_filepath):
 
 
 
+
+    async def get_season_links(self, session, show_url):
+        soup = await self.get_soup(session, show_url)
+        return soup.select(".mainbox2 > a")[:self.number_of_seasons]
+
+    async def scrape_season(self, session, season_link):
+        season_url = self.baseurl + season_link["href"]
+        logger.debug("Fetching season link: %s", season_link.text)
+        
+        soup = await self.get_soup(session, season_url)
+        episode_links_parent = soup.find_all(class_="mainbox")
+        
+        # Gather all episode scraping concurrently
+        await asyncio.gather(*[self.scrape_episode(session, episode_link) for episode_link in episode_links_parent])
+        logger.info(f"Completed downloading season: {season_link.text}")
+
+    async def scrape_episode(self, session, episode_link):
+        link = episode_link.find('a')
+        episode_name = str(episode_link.find("b").text) + ".mp4"
+        
+        if link:
+            episode_url = self.baseurl + link["href"]
+            logger.info("Opening episode link: %s", link.text)
+            soup = await self.get_soup(session, episode_url)
+            
+            download_url = await self.get_download_url(session, soup)
+            if download_url:
+                self.download_links.append({"link": download_url, "name": episode_name})
+                logger.info(f"Added download link for {episode_name}")
+            else:
+                logger.warning("Download link not found for episode.")
+
+    async def get_download_url(self, session, soup):
+        download_page_link = soup.select_one("#dlink2")
+        if download_page_link:
+            download_url = self.baseurl + download_page_link["href"]
+            soup = await self.get_soup(session, download_url)
+            
+            download_button = soup.select_one(".downloadlinks2 input")
+            if download_button:
+                return download_button['value']
+        return None
+
+
