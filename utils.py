@@ -38,7 +38,7 @@ def download_file(url, local_filepath):
                     print(str(r.content, encoding='iso-8859-1'))
                 return
         content_length = int(r.headers['Content-Length'])
-        print("== ",content_length)
+        
         if decoded_bytes_downloaded>=content_length:
                 print('STOP: file already downloaded. decoded_bytes_downloaded>=r.headers[Content-Length]; {}>={}'.format(decoded_bytes_downloaded,r.headers['Content-Length']))
                 return
