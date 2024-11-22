@@ -31,6 +31,7 @@ parser.add_argument(
     help="Number of movie/series you want to download" 
 )
 
+#TODO add feature to specify the specific episode or episodes user want to download, like 5 - 20
 parser.add_argument(
     "-ne",
     "--number_of_episodes",
@@ -50,11 +51,9 @@ class Downloader(ABC):
     def __init__(self, movie_title, type, number_of_seasons=1):
         self.type = type
         self.movie_title = movie_title
-        # self.number_of_episodes = number_of_episodes
         self.number_of_seasons = number_of_seasons
         self.url = None
         self.download_links = []
-    
     
     @abstractmethod
     def scrape_site(self):
@@ -85,9 +84,8 @@ class Downloader(ABC):
         while attempt < max_retries:
             print("reached here-")
             try:
-                # Get content size only within a successful session.get call
                 async with session.get(url) as response:
-                    print("reached here")
+                 
                     content_size = int(response.headers.get("Content-Length", 0))
 
                 headers = {}
@@ -96,16 +94,14 @@ class Downloader(ABC):
                     headers['Range'] = f'bytes={decoded_bytes_downloaded}-{content_size-1}'
 
                 async with session.get(url, headers=headers) as response:
-                    # content_size = int(response.headers.get("Content-Length", 0))
 
                     if decoded_bytes_downloaded >= content_size:
-                        print(f'STOP: file already downloaded. {decoded_bytes_downloaded} >= {content_size}\n
-                              ')
+                        print(f'STOP: file already downloaded. {decoded_bytes_downloaded} >= {content_size}\n')
                         return
 
                     # Open file in append mode if resuming
                     with open(name, "ab") as f:
-                        chunk_size = 8096
+                        chunk_size = 32 * 1024
                         pbar = tqdm(total=int(content_size), initial=int(decoded_bytes_downloaded), unit_scale=True, desc=name)
 
                         while True:
@@ -121,8 +117,7 @@ class Downloader(ABC):
                     print(f"Downloaded {name} successfully.\n")
                     break
 
-            except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
-                print("ERRR", e)
+            except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError, asyncio.TimeoutError, asyncio.CancelledError) as e:
                 attempt += 1
                 logger.warning(f"Attempt {attempt} of {max_retries} failed for {url}: {e}")
                 await asyncio.sleep(retry_delay)  # Wait before retrying
