@@ -38,7 +38,6 @@ parser.add_argument(
 )
 
 arguments = parser.parse_args()
-print(arguments)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__file__)
