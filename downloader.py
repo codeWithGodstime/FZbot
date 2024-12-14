@@ -1,189 +1,184 @@
-# import logging
-# import time
-# from selenium import webdriver
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver.common.keys import Keys
-# from selenium.webdriver.chrome.service import Service
-# from selenium.common.exceptions import UnexpectedAlertPresentException
-# from selenium.webdriver.common.alert import Alert
-# from webdriver_manager.chrome import ChromeDriverManager
-# from selenium.webdriver.chrome.options import Options
-
-# # Set up logging
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
-
-# # Set up Chrome options and driver
-# chrome_options = Options()
-# chrome_options.add_argument("--disable-javascript")
-# # chrome_options.add_argument("--headless")  # Optional: Run in headless mode if you don't need a UI
-# driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
-# BASE_URL = "https://mobiletvshows.site/"
-# SEARCH_TERM = "silicon valley"  # Replace with your actual search term
-
-# try:
-#     # Step 1: Navigate to the base URL
-#     driver.get(BASE_URL)
-#     logger.info("Navigated to %s", BASE_URL)
-    
-#     # Step 2: Locate the search bar and perform a search
-#     search_bar = driver.find_element(By.ID, "searchname")  # Replace "searchname" with actual search bar ID
-#     search_bar.send_keys(SEARCH_TERM)
-#     search_bar.send_keys(Keys.RETURN)
-#     logger.info("Performed search for %s", SEARCH_TERM)
-#     time.sleep(10)  # Wait for results to load
-    
-#     # Step 3: Click the first search result
-#     search_result = driver.find_element(By.CSS_SELECTOR, ".mainbox3 > a")  # Replace with actual CSS selector
-#     search_result.click()
-#     logger.info("Clicked on the first search result")
-#     time.sleep(2)
-    
-#     # Step 4: Get all season links
-#     season_links = driver.find_elements(By.CSS_SELECTOR, ".mainbox2 > a")  # Replace with actual CSS selector
-#     for season_link in season_links:
-#         logger.info("Opening season link: %s", season_link.text)
-#         season_link.click()
-#         time.sleep(2)
-        
-#         # Step 5: Get all episode links for the current season
-#         episode_links = driver.find_elements(By.CSS_SELECTOR, ".mainbox > a")  # Replace with actual CSS selector
-#         for episode_link in episode_links:
-#             logger.info("Opening episode link: %s", episode_link.text)
-#             episode_link.click()
-#             time.sleep(2)
-            
-#             # Step 6: Go to the download page
-#             download_page_link = driver.find_element(By.ID, "dlink2")  # Replace with actual ID
-#             download_page_link.click()
-#             logger.info("Navigated to download page")
-#             time.sleep(2)
-            
-#             # Step 7: Click the final download button
-#             download_button = driver.find_element(By.ID, "flink2")  # Replace with actual ID
-#             download_button.click()
-#             logger.info("Initiated download")
-#             time.sleep(5)  # Allow time for download to start
-            
-#             # Go back to the season page after each episode
-#             driver.back()
-#             time.sleep(2)
-        
-#         # Go back to the main page after each season
-#         driver.back()
-#         time.sleep(2)
-# except UnexpectedAlertPresentException as rr:
-#     alert_text = Alert(driver).text
-#     assert alert_text ==  "Download the Official Android App for FzMovies + FzTvSeries = FzStudios"
-#     logger.error(f"Alert happend {rr}")
-#     Alert(driver).dismiss()
-
-# finally:
-#     # Step 8: Close the driver
-#     driver.quit()
-#     logger.info("Closed the browser")
-
-import re
+import asyncio
 import logging
 import time
-import requests
-import threading
+import os
+from abc import ABC, abstractmethod
 from bs4 import BeautifulSoup
-from utils import download_file
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-BASE_URL = "https://mobiletvshows.site/"
-SEARCH_TERM = "silicon valley"  # Replace with your actual search term
-
-session = requests.Session()
-
-ALL_EPISODE_LINKS = []
-
-def get_soup(url):
-    """Fetches the page content and returns a BeautifulSoup object."""
-    response = session.get(url)
-    # logger.info(f"Response text = {response.text}")
-    response.raise_for_status()
-    return BeautifulSoup(response.text, 'html.parser')
-
-# def download_file(url, **kwargs):
-#     episode_name = kwargs.get("name")
-
-#     sanitized_name = re.sub(r'[\\/*?:"<>|]', "_", episode_name)
-#     # Extract file extension from the URL if not provided in `episode_name`
-
-#     file_extension = ".mp4"
-#     sanitized_name += file_extension
-
-#     with requests.get(url, stream=True) as r:
-#         r.raise_for_status()
-#         with open(sanitized_name, 'wb') as f:
-#             for chunk in r.iter_content(chunk_size=10000): 
-#                 f.write(chunk)
-#     return True
+from tqdm.asyncio import trange, tqdm
 
 
-try:
-    # Step 1: Perform a searchhttps://mobiletvshows.site/search.php?search=silicon+valley&beginsearch=Search&vsearch=&by=series=
-    search_url = f"{BASE_URL}search.php?search={SEARCH_TERM.replace(' ', '+')}&beginsearch=Search&vsearch=&by=series="
-    logger.info("Navigating to search URL: %s", search_url)
-    soup = get_soup(search_url)
-    time.sleep(2)
-    
-    # Step 2: Locate the first search result link
-    search_result = soup.select_one(".mainbox3 table span a")  # Replace with actual CSS selector if different
-    if not search_result:
-        logger.error("No search results found.")
-    else:
-        show_url = BASE_URL + search_result["href"]
-        logger.info("Opening first search result link: %s", show_url)
-        
-        # Step 3: Get all season links
-        soup = get_soup(show_url)
-        season_links = soup.select(".mainbox2 > a")  # Replace with actual CSS selector if different
-        
-        for season_link in season_links:
-            season_url = BASE_URL + season_link["href"]
-            logger.info("Opening season link: %s", season_link.text)
-            soup = get_soup(season_url)
-            time.sleep(2)
-            
-            # Step 4: Get all episode links for the current season
-            episode_links_parent = soup.find_all(class_="mainbox")  # Replace with actual CSS selector if different
-            # print("Episode links = ", episode_links_parent)
-            for episode_link in episode_links_parent:
-                link = episode_link.find('a') # get the first link beacuse if is two mp4 or webm
-                episode_name = str(episode_link.find("b").text)
-                logger.error(episode_name)
-                episode_url = BASE_URL + link["href"]
-                ALL_EPISODE_LINKS.append(episode_url)
-                logger.info("Opening episode link: %s", link.text)
-                soup = get_soup(episode_url)
-                
-                # Step 5: Go to the download page
-                download_page_link = soup.select_one("#dlink2")  # Replace with actual ID if different
-                if download_page_link:
-                    download_url = BASE_URL + download_page_link["href"]
-                    logger.info("Navigated to download page: %s", download_url)
-                    soup = get_soup(download_url)
-                    
-                #     # Step 6: Click the final download button
-                    download_button = soup.select_one(".downloadlinks2 input")  # Replace with actual ID if different
-                    if download_button:
-                        final_download_url = download_button['value']
-                        logger.info("Final download URL: %s", final_download_url)
-                        episode_name = episode_name + ".mp4"
-                        # Here, you might download the file or handle it as needed.
-                        download_file(final_download_url, local_filepath=episode_name)
-                    else:
-                        logger.warning("Download button not found on the download page.")
-                else:
-                    logger.warning("Download page link not found on episode page.")
-                
-finally:
-    logger.info("Finished scraping.")
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__file__)
 
+
+class Downloader(ABC):
+    def __init__(self, movie_title, type, number_of_seasons=1):
+        self.type = type
+        self.movie_title = movie_title
+        self.number_of_seasons = number_of_seasons
+        self.url = None
+        self.download_links = []
+
+    @abstractmethod
+    def scrape_site(self):
+        ...
+
+    async def get_soup(self, session, url):
+        """Fetches the page content and returns a BeautifulSoup object."""
+        start_time = time.time()
+        soup = None
+        async with session.get(url) as response:
+            body = await response.text()
+            logger.debug(f"Finishing fetching {url}")
+            soup = BeautifulSoup(body, 'html.parser')
+            endtime = time.time()
+            logger.debug(f"Scraping time: {endtime - start_time} seconds")
+        return soup
+
+    @staticmethod
+    async def download(session, url, name, max_retries=3, retry_delay=1):
+        """
+        Downloads a file asynchronously with retries for network-related errors.
+        """
+        decoded_bytes_downloaded = os.path.getsize(
+            name) if os.path.exists(name) else 0
+        print("Downloaded bytes=", decoded_bytes_downloaded)
+        attempt = 0
+        decoded_bytes_downloaded_this_session = 0
+
+        while attempt < max_retries:
+
+            try:
+                async with session.get(url) as response:
+                    if 'Content-Length' not in response.headers:
+                        print('STOP: request headers do not contain Content-Length')
+                        return
+
+                    if ('Accept-Ranges', 'bytes') not in response.headers.items():
+                        print(
+                            'STOP: request headers do not contain Accept-Ranges: bytes')
+                        with session.get(url) as r:
+                            print(str(r.content, encoding='iso-8859-1'))
+
+                    content_size = int(
+                        response.headers.get("Content-Length", 0))
+
+                    if decoded_bytes_downloaded >= content_size:
+                        print('STOP: file already downloaded. decoded_bytes_downloaded>=r.headers[Content-Length]; {}>={}'.format(
+                            decoded_bytes_downloaded, response.headers['Content-Length']))
+                        return
+
+                    # Open file in append mode if resuming
+                    with open(name, "ab") as f:
+                        chunk_size = 32 * 1024
+                        pbar = tqdm(total=int(content_size), initial=int(
+                            decoded_bytes_downloaded), unit_scale=True, desc=name)
+
+                        while True:
+                            # Read a chunk of the specified size
+                            chunk = await response.content.read(chunk_size)
+                            if not chunk:  # Exit if no more data
+                                break
+                            f.write(chunk)  # Write chunk to file
+                            # Update progress bar by chunk size
+                            pbar.update(len(chunk))
+                        pbar.close()
+
+                    # Exit loop if download succeeds
+                    print(f"Downloaded {name} successfully.\n\n\n")
+                    break
+# aiohttp.ClientConnectionError, aiohttp.ClientResponseError, asyncio.CancelledError
+            except (asyncio.TimeoutError) as e:
+                attempt += 1
+                logger.warning(f"Attempt {attempt} of {
+                               max_retries} failed for {url}: {e}")
+                await asyncio.sleep(retry_delay)  # Wait before retrying
+                if attempt == max_retries:
+                    logger.error(f"Download failed after {
+                                 max_retries} attempts for {url}")
+
+            except Exception as e:
+                logger.exception(f"An unexpected error occurred: {e}")
+                break  # Break the loop on unexpected errors
+
+
+class SeriesDownloader(Downloader):
+    def __init__(self, movie_title, type='series', number_of_seasons=1, number_of_episodes=1):
+        super().__init__(movie_title, type, number_of_seasons)
+        self.baseurl = 'https://mobiletvshows.site/'
+        self.search_term = movie_title
+        self.url = f"{self.baseurl}search.php?search={
+            self.search_term.replace(' ', '+')}&beginsearch=Search&vsearch=&by=series="
+        self.download_links = []
+        self.number_of_episodes = number_of_episodes
+
+    async def scrape_site(self, session):
+        try:
+            search_page_soup = await self.get_soup(session, self.url)
+            search_result = search_page_soup.select_one(
+                ".mainbox3 table span a")
+
+            if not search_result:
+                logger.error(
+                    f"{self.search_term} not found. Please check the name.")
+                return
+
+            show_url = self.baseurl + search_result["href"]
+            logger.debug("Opening first search result link: %s", show_url)
+
+            season_links = await self.get_season_links(session, show_url)
+            await asyncio.gather(*[self.scrape_season(session, season_link) for season_link in season_links])
+
+        except Exception as e:
+            logger.critical(f"An error occurred: {e}")
+
+    async def get_season_links(self, session, show_url):
+        soup = await self.get_soup(session, show_url)
+        return soup.select(".mainbox2 > a")[:self.number_of_seasons]
+
+    async def scrape_season(self, session, season_link):
+        season_url = self.baseurl + season_link["href"]
+        logger.debug("Fetching season link: %s", season_link.text)
+
+        soup = await self.get_soup(session, season_url)
+        episode_links_parent = soup.find_all(class_="mainbox")[:self.number_of_episodes]
+
+        # Gather all episode scraping concurrently
+        await asyncio.gather(*[self.scrape_episode(session, episode_link) for episode_link in episode_links_parent])
+        logger.info(f"Completed downloading season: {season_link.text}")
+
+    async def scrape_episode(self, session, episode_link):
+        link = episode_link.find('a')
+        episode_name = str(episode_link.find("b").text) + ".mp4"
+
+        if link:
+            episode_url = self.baseurl + link["href"]
+            logger.info("Opening episode link: %s", link.text)
+            soup = await self.get_soup(session, episode_url)
+
+            download_url = await self.get_download_url(session, soup)
+            if download_url:
+                self.download_links.append(
+                    {"link": download_url, "name": episode_name})
+                logger.info(f"Added download link for {episode_name}")
+            else:
+                logger.warning("Download link not found for episode.")
+
+    async def get_download_url(self, session, soup):
+        download_page_link = soup.select_one("#dlink2")
+        if download_page_link:
+            download_url = self.baseurl + download_page_link["href"]
+            soup = await self.get_soup(session, download_url)
+
+            download_button = soup.select_one(".downloadlinks2 input")
+            if download_button:
+                return download_button['value']
+        return None
+
+
+class MovieDownloader(Downloader):
+    def __init__(self, movie_title, type='series', number_of_seasons=1):
+        super().__init__(movie_title, type, number_of_seasons)
+
+    async def scrape_site(self, session):
+        return super().scrape_site()
