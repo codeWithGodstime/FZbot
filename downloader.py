@@ -42,7 +42,7 @@ class Downloader(ABC):
         """
         decoded_bytes_downloaded = os.path.getsize(
             name) if os.path.exists(name) else 0
-        print("Downloaded bytes=", decoded_bytes_downloaded)
+
         attempt = 0
         decoded_bytes_downloaded_this_session = 0
 
@@ -115,16 +115,27 @@ class SeriesDownloader(Downloader):
     async def scrape_site(self, session):
         try:
             search_page_soup = await self.get_soup(session, self.url)
-            search_result = search_page_soup.select_one(
-                ".mainbox3 table span a")
+            search_results = search_page_soup.select(
+                ".mainbox3 table span a")  # Get all results
 
-            if not search_result:
-                logger.error(
-                    f"{self.search_term} not found. Please check the name.")
+            if not search_results:
+                logger.error(f"{self.search_term} not found. Please check the name.")
                 return
 
-            show_url = self.baseurl + search_result["href"]
-            logger.debug("Opening first search result link: %s", show_url)
+            # Find the exact match
+            exact_match = None
+            for result in search_results:
+                if result.text.strip().lower() == self.search_term.strip().lower():
+                    exact_match = result
+                    break
+
+            if not exact_match:
+                logger.error(f"Exact match for '{
+                            self.search_term}' not found. Please check the name.")
+                return
+
+            show_url = self.baseurl + exact_match["href"]
+            logger.debug("Opening exact match link: %s", show_url)
 
             season_links = await self.get_season_links(session, show_url)
             await asyncio.gather(*[self.scrape_season(session, season_link) for season_link in season_links])
@@ -141,7 +152,8 @@ class SeriesDownloader(Downloader):
         logger.debug("Fetching season link: %s", season_link.text)
 
         soup = await self.get_soup(session, season_url)
-        episode_links_parent = soup.find_all(class_="mainbox")[:self.number_of_episodes]
+        episode_links_parent = soup.find_all(class_="mainbox")[
+            :self.number_of_episodes]
 
         # Gather all episode scraping concurrently
         await asyncio.gather(*[self.scrape_episode(session, episode_link) for episode_link in episode_links_parent])
@@ -149,7 +161,7 @@ class SeriesDownloader(Downloader):
 
     async def scrape_episode(self, session, episode_link):
         link = episode_link.find('a')
-        episode_name = str(episode_link.find("b").text) + ".mp4"
+        episode_name = str(episode_link.find("b").text) + ".mp4" #TODO Make this configurable because some series can be in different format e.g AVI
 
         if link:
             episode_url = self.baseurl + link["href"]

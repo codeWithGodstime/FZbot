@@ -76,11 +76,9 @@ Here's a clear and structured usage guide based on your `argparse` implementatio
 
 ### Basic Command Structure:
 
-bash
-
-Copy code
-
-`python fzbot.py [type] [title] [-ns NUMBER_OF_SEASONS] [-ne NUMBER_OF_EPISODES]`
+```bash
+python fzbot.py [type] [title] [-ns NUMBER_OF_SEASONS] [-ne NUMBER_OF_EPISODES]
+```
 
 ---
 
