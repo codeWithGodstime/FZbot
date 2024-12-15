@@ -47,6 +47,7 @@ class Downloader(ABC):
         decoded_bytes_downloaded_this_session = 0
 
         while attempt < max_retries:
+            
 
             try:
                 async with session.get(url) as response:
@@ -75,18 +76,26 @@ class Downloader(ABC):
                             decoded_bytes_downloaded), unit_scale=True, desc=name)
 
                         while True:
-                            # Read a chunk of the specified size
                             chunk = await response.content.read(chunk_size)
-                            if not chunk:  # Exit if no more data
+                            if not chunk:
                                 break
-                            f.write(chunk)  # Write chunk to file
-                            # Update progress bar by chunk size
+                            f.write(chunk)
+                            decoded_bytes_downloaded += len(chunk)
                             pbar.update(len(chunk))
-                        pbar.close()
 
-                    # Exit loop if download succeeds
-                    print(f"Downloaded {name} successfully.\n\n\n")
-                    break
+                            # Stop if we downloaded enough data
+                            if content_size and decoded_bytes_downloaded >= content_size:
+                                break
+                    pbar.close()
+
+                    # Check if the downloaded size matches the content length
+                    if content_size and decoded_bytes_downloaded != content_size:
+                        logger.warning(
+                            f"Warning: Downloaded size ({decoded_bytes_downloaded}) does not match Content-Length ({content_size})."
+                        )
+
+                    logger.info(f"Download completed successfully: {name}")
+
 # aiohttp.ClientConnectionError, aiohttp.ClientResponseError, asyncio.CancelledError
             except (asyncio.TimeoutError) as e:
                 attempt += 1
