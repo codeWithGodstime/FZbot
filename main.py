@@ -50,16 +50,19 @@ async def main():
         downloader = MovieDownloader(arguments.title)
 
     timeout = aiohttp.ClientTimeout(total=0)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    max_connection = aiohttp.TCPConnector(limit=5)
+    async with aiohttp.ClientSession(timeout=timeout, connector=max_connection) as session:
         await downloader.scrape_site(session)
         tasks = [downloader.download(session, url.get("link"), url.get(
             "name")) for url in downloader.download_links]
+        
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-        print(tasks)
+
         # downloading
-        for i in range(0, len(tasks), 5):
-            batch = tasks[i:i + 5]
-            await asyncio.gather(*batch, return_exceptions=True)
+        # for i in range(0, len(tasks), 5):
+        #     batch = tasks[i:i + 5]
+        #     await asyncio.gather(*batch, return_exceptions=True)
 
 
 if __name__ == "__main__":
