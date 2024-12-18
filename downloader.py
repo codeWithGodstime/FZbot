@@ -37,75 +37,82 @@ class Scapper(ABC):
         return soup
 
 class Downloader():
+
     @staticmethod
     async def download(session, url, name, folder_name):
+        """
+        Downloads a file from a given URL with support for resumable downloads.
+        
+        Args:
+            session (aiohttp.ClientSession): The aiohttp session to perform HTTP requests.
+            url (str): The URL of the file to download.
+            name (str): The name of the file to save as.
+            folder_name (str): The folder to save the downloaded file in.
+
+        Returns:
+            None
+        """
         download_folder_path = os.path.join(folder_name, name)
         decoded_bytes_downloaded = os.path.getsize(download_folder_path) if os.path.exists(download_folder_path) else 0
 
-        attempt = 0
-        decoded_bytes_downloaded_this_session = 0
-
         try:
             async with session.get(url) as response:
+                # Check required headers for resumable download
+                print(response.headers)
                 if 'Content-Length' not in response.headers:
-                    print('STOP: request headers do not contain Content-Length')
+                    logger.error('STOP: Request headers do not contain Content-Length')
                     return
 
-                if ('Accept-Ranges', 'bytes') not in response.headers.items():
-                    print('STOP: request headers do not contain Accept-Ranges: bytes')
-                    return 
+                if response.headers.get('Accept-Ranges', '').lower() != 'bytes':
+                    logger.error('STOP: Request headers do not contain Accept-Ranges: bytes')
+                    return
 
-                content_size = int(response.headers.get("Content-Length", 0))
+                content_size = int(response.headers["Content-Length"])
 
+                # File already fully downloaded
                 if decoded_bytes_downloaded >= content_size:
-                    print('STOP: file already downloaded. decoded_bytes_downloaded>=r.headers[Content-Length]; {}>={}'.format(
-                        decoded_bytes_downloaded, response.headers['Content-Length']))
+                    logger.info(f"File already downloaded: {name} ({decoded_bytes_downloaded}/{content_size} bytes)")
                     return
 
-                if decoded_bytes_downloaded>0:
-                    response.headers['Range'] = 'bytes={}-{}'.format(decoded_bytes_downloaded, content_size-1) #range is inclusive
-                    print('Retrieving byte range (inclusive) {}-{}'.format(decoded_bytes_downloaded, content_size-1))
+                # Prepare for resuming download
+                headers = {}
+                if decoded_bytes_downloaded > 0:
+                    headers = {'Range': f'bytes={decoded_bytes_downloaded}-{content_size - 1}'}
+                    logger.info(f"Resuming download: {name} from byte {decoded_bytes_downloaded}")
 
-                # Open file in append mode if resuming
-                with open(download_folder_path, "ab") as f:
-                    chunk_size = 32 * 1024
-                    pbar = tqdm(total=int(content_size), initial=int(
-                        decoded_bytes_downloaded), unit_scale=True, desc=name)
+                # Re-send request with range header if resuming
+                async with session.get(url, headers=headers) as resumed_response:
+                    if resumed_response.status not in [200, 206]:
+                        logger.error(f"Failed to resume download. HTTP Status: {resumed_response.status}")
+                        return
+                        
+                    with open(download_folder_path, "ab") as f:
+                        chunk_size = 16 * 1024
+                        pbar = tqdm(total=content_size, initial=decoded_bytes_downloaded, unit_scale=True, desc=name)
 
-                    while True:
-                        chunk = await response.content.read(chunk_size)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        decoded_bytes_downloaded += len(chunk)
-                        pbar.update(len(chunk))
+                        while True:
+                            chunk = await resumed_response.content.read(chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            decoded_bytes_downloaded += len(chunk)
+                            pbar.update(len(chunk))
 
-                        # Stop if we downloaded enough data
-                        if content_size == decoded_bytes_downloaded:
-                            print("the file is downloaded successfully")
-                            break
-                pbar.close()
+                        pbar.close()
 
-                # Check if the downloaded size matches the content length
-                if content_size and decoded_bytes_downloaded != content_size:
+                # Validate download size
+                if decoded_bytes_downloaded != content_size:
                     logger.warning(
-                        f"Warning: Downloaded size ({decoded_bytes_downloaded}) does not match Content-Length ({content_size})."
+                        f"Downloaded size ({decoded_bytes_downloaded}) does not match Content-Length ({content_size})."
                     )
+                else:
+                    logger.info(f"Download completed successfully: {name}")
 
-                logger.info(f"Download completed successfully: {name}\n")
-
-# aiohttp.ClientConnectionError, aiohttp.ClientResponseError, asyncio.CancelledError
-        except (asyncio.TimeoutError) as e:
-            attempt += 1
-            # logger.warning(f"Attempt {attempt} of {
-            #                 max_retries} failed for {url}: {e}")
-            # await asyncio.sleep(retry_delay)  # Wait before retrying
-            # if attempt == max_retries:
-            #     logger.error(f"Download failed after {
-            #                     max_retries} attempts for {url}")
-
+        except aiohttp.ClientError as e:
+            logger.error(f"Client error occurred while downloading {name}: {e}")
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
+
 
 
 class Series(Scapper):
@@ -300,94 +307,7 @@ class Series(Scapper):
             # Log critical error for unhandled exceptions
             logger.critical(f"An error occurred while scraping episode link: {e}")
 
-
-class SeriesDownloader(Downloader):
-    def __init__(self, movie_title, type='series', number_of_seasons=1, number_of_episodes=1):
-        super().__init__(movie_title, type, number_of_seasons)
-        self.baseurl = 'https://mobiletvshows.site/'
-        self.search_term = movie_title
-        self.url = f"{self.baseurl}search.php?search={
-            self.search_term.replace(' ', '+')}&beginsearch=Search&vsearch=&by=series="
-        self.download_links = []
-        self.number_of_episodes = number_of_episodes
-
-    async def scrape_site(self, session):
-        try:
-            search_page_soup = await self.get_soup(session, self.url)
-            search_results = search_page_soup.select(
-                ".mainbox3 table span a")  # Get all results
-
-            if not search_results:
-                logger.error(f"{self.search_term} not found. Please check the name.")
-                return
-
-            # Find the exact match
-            exact_match = None
-            for result in search_results:
-                if result.text.strip().lower() == self.search_term.strip().lower():
-                    exact_match = result
-                    break
-
-            if not exact_match:
-                logger.error(f"Exact match for '{
-                            self.search_term}' not found. Please check the name.")
-                return
-
-            show_url = self.baseurl + exact_match["href"]
-            logger.debug("Opening exact match link: %s", show_url)
-
-            # Get all the links to the series season e.g season 1, season 2
-            season_links = await self.get_season_links(session, show_url)
-            await asyncio.gather(*[await self.scrape_season(session, season_link) for season_link in season_links])
-
-        except Exception as e:
-            logger.critical(f"An error occurred: {e}")
-
-    async def get_season_links(self, session, show_url):
-        soup = await self.get_soup(session, show_url)
-        return soup.select(".mainbox2 > a")
-
-    async def scrape_season(self, session, season_link):
-        season_url = self.baseurl + season_link["href"]
-        logger.debug("Fetching season link: %s", season_link.text)
-
-        soup = await self.get_soup(session, season_url)
-        episode_links_parent = soup.find_all(class_="mainbox")
-
-        # Gather all episode scraping concurrently
-        await asyncio.gather(*[self.scrape_episode(session, episode_link) for episode_link in episode_links_parent])
-        logger.info(f"Completed downloading season: {season_link.text}")
-
-    async def scrape_episode(self, session, episode_link):
-        link = episode_link.find('a')
-        episode_name = str(episode_link.find("b").text) + ".mp4" #TODO Make this configurable because some series can be in different format e.g AVI
-
-        if link:
-            episode_url = self.baseurl + link["href"]
-            logger.info("Opening episode link: %s", link.text)
-            soup = await self.get_soup(session, episode_url)
-
-            download_url = await self.get_download_url(session, soup)
-            if download_url:
-                self.download_links.append(
-                    {"link": download_url, "name": episode_name})
-                logger.info(f"Added download link for {episode_name}")
-            else:
-                logger.warning("Download link not found for episode.")
-
-    async def get_download_url(self, session, soup):
-        download_page_link = soup.select_one("#dlink2")
-        if download_page_link:
-            download_url = self.baseurl + download_page_link["href"]
-            soup = await self.get_soup(session, download_url)
-
-            download_button = soup.select_one(".downloadlinks2 input")
-            if download_button:
-                return download_button['value']
-        return None
-
-
-class MovieDownloader(Downloader):
+class MovieDownloader(Scapper):
     def __init__(self, movie_title, type='series', number_of_seasons=1):
         super().__init__(movie_title, type, number_of_seasons)
 
