@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import aiohttp
+import aiofiles
 import argparse
 import os
 import re
@@ -29,59 +30,33 @@ class Downloader():
         Returns:
             None
         """
-        download_folder_path = os.path.join(folder_name, name)
-        decoded_bytes_downloaded = os.path.getsize(download_folder_path) if os.path.exists(download_folder_path) else 0
+        os.makedirs(folder_name, exist_ok=True)
+        output_path = os.path.join(folder_name, name)
+        
+        if os.path.exists(output_path):
+            downloaded_size = os.path.getsize(output_path)
+            headers = {'Range': f'bytes={downloaded_size}-'}
+        else:
+            downloaded_size = 0
+            headers = {}
 
         try:
-            async with session.get(url) as response:
+            async with session.head(url) as head_resp:
+                total_size = int(head_resp.headers.get('Content-Length', 0)) + downloaded_size
+                print(total_size, "SIZE")
+            
+            async with session.get(url, headers=headers) as resp:
+                if resp.status in (200, 206):
+                    mode = 'ab' if downloaded_size > 0 else 'wb'
+                    progress = tqdm(total=total_size, initial=downloaded_size, unit='B', unit_scale=True, desc='Downloading')
 
-                # Check required headers for resumable download
-                if 'Content-Length' not in response.headers:
-                    logger.error('STOP: Request headers do not contain Content-Length')
-                    return
-
-                if response.headers.get('Accept-Ranges', '').lower() != 'bytes':
-                    logger.error('STOP: Request headers do not contain Accept-Ranges: bytes')
-                    return
-
-                content_size = int(response.headers["Content-Length"])
-
-                # File already fully downloaded
-                if decoded_bytes_downloaded >= content_size:
-                    logger.info(f"File already downloaded: {name} ({decoded_bytes_downloaded}/{content_size} bytes)")
-                    return
-
-                # Prepare for resuming download
-                headers = {}
-                if decoded_bytes_downloaded > 0:
-                    headers = {'Range': f'bytes={decoded_bytes_downloaded}-{content_size - 1}'}
-                    logger.info(f"Resuming download: {name} from byte {decoded_bytes_downloaded}")
-
-                # Re-send request with range header if resuming
-                async with session.get(url) as resumed_response:
-                    print('reached here \n')
-                    with open(download_folder_path, "ab") as f:
-                        chunk_size = 16 * 1024
-                        pbar = tqdm(total=content_size, initial=decoded_bytes_downloaded, unit_scale=True, desc=name)
-
-                        while True:
-                            chunk = await resumed_response.content.read(chunk_size)
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            decoded_bytes_downloaded += len(chunk)
-                            pbar.update(len(chunk))
-
-                        pbar.close()
-
-                # Validate download size
-                if decoded_bytes_downloaded != content_size:
-                    logger.warning(
-                        f"Downloaded size ({decoded_bytes_downloaded}) does not match Content-Length ({content_size})."
-                    )
-                else:
-                    logger.info(f"Download completed successfully: {name}")
-
+                    async with aiofiles.open(output_path, mode) as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            if chunk:
+                                await f.write(chunk)
+                                progress.update(len(chunk))
+                    progress.close()
+                    print("Download complete.")
         except aiohttp.ClientError as e:
             logger.error(f"Client error occurred while downloading {name}: {e}")
         except Exception as e:
@@ -174,9 +149,19 @@ class SeriesDownloader(Scapper, Parser):
                 episode_link_parent = soup.find_all(class_="mainbox")[self.settings['specific_episode'] - 1]
                 logger.info("The number of episode for %s is %s", series_link.text, episode_link_parent)
 
-            await self.scrape_episode_link(episode_link_parent)
-        
+                await self.scrape_episode_link(episode_link_parent)
+            else:
+                print("ALL EP in", series_link.text)
+                season_url = self.baseurl + series_link["href"]
+                logger.info("Scraping %s", series_link.text)
 
+                soup = await self.get_soup(self.session, season_url)
+                episode_links_parent = soup.find_all(class_="mainbox")
+                logger.info("The number of episode for %s is %s", series_link.text, len(episode_links_parent)) 
+
+                # Gather all episode scraping concurrently for this season
+                await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episode_links_parent])
+        
     async def scrape_episode_link(self, episode_link: BeautifulSoup):
         try:
             logger.debug("Scraping %s\n", episode_link.find('small').text)
@@ -219,7 +204,6 @@ class SeriesDownloader(Scapper, Parser):
             soup = await self.get_soup(self.session, download_url)
 
             download_button = soup.select(".downloadlinks2 input")[1]
-            print("FOUND")
             if download_button:
                 return download_button['value']
         return None
