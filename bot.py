@@ -14,6 +14,27 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__file__)
 
 
+class Scapper(ABC):
+    @abstractmethod
+    def scrape_search_page(self):
+        ...
+
+    @abstractmethod
+    def scrape_seasons_link(self):
+        ...
+
+    @abstractmethod
+    def scrape_episode_link(self):
+        ...
+
+    @abstractmethod
+    def scrape_download_link(self):
+        ...
+
+    @abstractmethod
+    def start(self):
+        ...
+
 class Downloader():
 
     @staticmethod
@@ -43,7 +64,6 @@ class Downloader():
         try:
             async with session.head(url) as head_resp:
                 total_size = int(head_resp.headers.get('Content-Length', 0)) + downloaded_size
-                print(total_size, "SIZE")
             
             async with session.get(url, headers=headers) as resp:
                 if resp.status in (200, 206):
@@ -56,34 +76,11 @@ class Downloader():
                                 await f.write(chunk)
                                 progress.update(len(chunk))
                     progress.close()
-                    print("Download complete.")
+                    print("Download complete.\n")
         except aiohttp.ClientError as e:
             logger.error(f"Client error occurred while downloading {name}: {e}")
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
-
-
-class Scapper(ABC):
-    @abstractmethod
-    def scrape_search_page(self):
-        ...
-
-    @abstractmethod
-    def scrape_seasons_link(self):
-        ...
-
-    @abstractmethod
-    def scrape_episode_link(self):
-        ...
-
-    @abstractmethod
-    def scrape_download_link(self):
-        ...
-
-    @abstractmethod
-    def start(self):
-        ...
-
 
 class Parser():
     async def get_soup(self, session, url):
@@ -151,7 +148,6 @@ class SeriesDownloader(Scapper, Parser):
 
                 await self.scrape_episode_link(episode_link_parent)
             else:
-                print("ALL EP in", series_link.text)
                 season_url = self.baseurl + series_link["href"]
                 logger.info("Scraping %s", series_link.text)
 
@@ -162,7 +158,6 @@ class SeriesDownloader(Scapper, Parser):
                 # Gather all episode scraping concurrently for this season
                 await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episode_links_parent])
         else:
-            print("ALL SEASONS in", series_url)
             soup = await self.get_soup(self.session, series_url)
             series_links = soup.select(".mainbox2 > a")
 
@@ -180,7 +175,6 @@ class SeriesDownloader(Scapper, Parser):
 
                     await self.scrape_episode_link(episode_link_parent)
                 else:
-                    print("ALL EP in", series_link.text)
                     season_url = self.baseurl + series_link["href"]
                     logger.info("Scraping %s", series_link.text)
 
@@ -240,7 +234,6 @@ class SeriesDownloader(Scapper, Parser):
     async def start(self):
         series_url = await self.scrape_search_page()
         await self.scrape_seasons_link(series_url)
-        print(self.download_links)
 
         tasks = [self.downloader.download(self.session, url.get("link"), url.get(
             "name"), self.series_title) for url in self.download_links]
@@ -270,9 +263,11 @@ async def main(*args, **kwargs):
     max_connection = aiohttp.TCPConnector(limit=2)
 
     async with aiohttp.ClientSession(connector=max_connection, timeout=timeout) as session:
-        scrape_instance = SeriesDownloader(title, session, **settings)
-        await scrape_instance.start()
-
+        if type == 'movie':
+            pass
+        else: 
+            scrape_instance = SeriesDownloader(title, session, **settings)
+            await scrape_instance.start()
 
 def entry():
     parser = argparse.ArgumentParser(
