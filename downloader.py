@@ -57,8 +57,8 @@ class Downloader():
 
         try:
             async with session.get(url) as response:
+
                 # Check required headers for resumable download
-                print(response.headers)
                 if 'Content-Length' not in response.headers:
                     logger.error('STOP: Request headers do not contain Content-Length')
                     return
@@ -81,11 +81,8 @@ class Downloader():
                     logger.info(f"Resuming download: {name} from byte {decoded_bytes_downloaded}")
 
                 # Re-send request with range header if resuming
-                async with session.get(url, headers=headers) as resumed_response:
-                    if resumed_response.status not in [200, 206]:
-                        logger.error(f"Failed to resume download. HTTP Status: {resumed_response.status}")
-                        return
-                        
+                async with session.get(url) as resumed_response:
+                    print('reached here \n')
                     with open(download_folder_path, "ab") as f:
                         chunk_size = 16 * 1024
                         pbar = tqdm(total=content_size, initial=decoded_bytes_downloaded, unit_scale=True, desc=name)
@@ -112,7 +109,6 @@ class Downloader():
             logger.error(f"Client error occurred while downloading {name}: {e}")
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
-
 
 
 class Series(Scapper):
@@ -239,9 +235,9 @@ class Series(Scapper):
             logger.info("The number of episode for %s is %s", season.text, len(episode_links_parent)) 
 
             # Gather all episode scraping concurrently for this season
-            await asyncio.gather(*[await self.scrape_episode_link(session, episode_link) for episode_link in episode_links_parent])
+            await asyncio.gather(*[self.scrape_episode_link(session, episode_link) for episode_link in episode_links_parent])
 
-    async def scrape_episode_link(self, session: aiohttp.ClientSession, episode_link: BeautifulSoup) -> None:
+    async def scrape_episode_link(self, session: aiohttp.ClientSession, episode_link: BeautifulSoup):
         """
         Scrapes the details and download link for an episode.
 
@@ -321,12 +317,12 @@ if __name__ == "__main__":
         timeout = aiohttp.ClientTimeout(total=0)
         max_connection = aiohttp.TCPConnector(limit=5)
         async with aiohttp.ClientSession(timeout=timeout, connector=max_connection) as session:
-            s = Series("Dexter", 6)
+            s = Series("The blacklist", 6)
             await s.scrape_search_page(session)
 
-            tasks = [s.downloader.download(session, url.get("link"), url.get(
-            "name"), s.series_title) for url in s.download_links]
-        
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # tasks = [s.downloader.download(session, url.get("link"), url.get(
+            # "name"), s.series_title) for url in s.download_links]
+
+            # await asyncio.gather(*tasks, return_exceptions=True)
     
     asyncio.run(main())

@@ -63,48 +63,81 @@ def download_file(url, local_filepath):
 
 
 
+async def scrape_seasons_link(self, series_url):
+        soup = await self.get_soup(self.session, series_url)
+        series_links = soup.select(".mainbox2 > a")
+        episode_link_parents = soup.find_all(class_="mainbox")
+        print("ALL EP", episode_link_parents)
 
+        if self.settings['season']:
+            print("SINGLE SEASON")
+            soup = await self.get_soup(self.session, series_url)
+            series_link = series_links[self.settings['season'] - 1]
 
-    async def get_season_links(self, session, show_url):
-        soup = await self.get_soup(session, show_url)
-        return soup.select(".mainbox2 > a")[:self.number_of_seasons]
+            # single episode page
+            season_url = self.baseurl + series_link["href"]
+            logger.info("Scraping %s", series_link.text)
 
-    async def scrape_season(self, session, season_link):
-        season_url = self.baseurl + season_link["href"]
-        logger.debug("Fetching season link: %s", season_link.text)
-        
-        soup = await self.get_soup(session, season_url)
-        episode_links_parent = soup.find_all(class_="mainbox")
-        
-        # Gather all episode scraping concurrently
-        await asyncio.gather(*[self.scrape_episode(session, episode_link) for episode_link in episode_links_parent])
-        logger.info(f"Completed downloading season: {season_link.text}")
+            soup = await self.get_soup(self.session, season_url)
 
-    async def scrape_episode(self, session, episode_link):
-        link = episode_link.find('a')
-        episode_name = str(episode_link.find("b").text) + ".mp4"
-        
-        if link:
-            episode_url = self.baseurl + link["href"]
-            logger.info("Opening episode link: %s", link.text)
-            soup = await self.get_soup(session, episode_url)
-            
-            download_url = await self.get_download_url(session, soup)
-            if download_url:
-                self.download_links.append({"link": download_url, "name": episode_name})
-                logger.info(f"Added download link for {episode_name}")
+            if self.settings['specific_episode']:
+                print("SINGLE EPISODE")
+
+                episode_link_parent = episode_link_parents[self.settings['specific_episode'] - 1]
+                logger.info("The number of episode for %s is %s", series_link.text, episode_link_parent)
+
+                await self.scrape_episode_link(episode_link_parent)
             else:
-                logger.warning("Download link not found for episode.")
+   
+                logger.info("The number of episode for %s is %s", series_link.text, len(episode_link_parents)) 
+                await asyncio.gather(*[self.scrape_episode_link( episode_link) for episode_link in episode_link_parents])
 
-    async def get_download_url(self, session, soup):
+        else:
+            print("getting all series")
+            pass
+
+    async def scrape_episode_link(self, episode_link: BeautifulSoup):
+        try:
+            logger.debug("Scraping %s\n", episode_link.find('small').text)
+
+            link = episode_link.find('a')
+
+            if link:
+                episode_url = self.baseurl + link["href"]
+                logger.info("Opening episode link: %s", link.text)  # high mp4, avi, webm
+
+                soup = await self.get_soup(self.session, episode_url)
+
+                episode_name = episode_link.find("b").text.strip()
+
+                # Check the type of link and format the episode name
+                if "high mp4" in link.text.lower():
+                    episode_name = f"{episode_name}.mp4"  # Add .mp4 extension for high mp4
+                else:
+                    episode_name = f"{episode_name}.{link.text.lower()[1:-1]}"  # Use link text as extension
+
+                logger.info("Formatted episode name with extension to save with: %s", episode_name)
+
+                # Scrape the download link
+                download_url = await self.scrape_download_link(soup)
+                if download_url:
+                    # Store the download link and episode name
+                    self.download_links.append({"link": download_url, "name": episode_name})
+                    logger.info(f"Added download link for {episode_name}")
+                else:
+                    # Log warning if no download link is found
+                    logger.warning("Download link not found for episode %s", episode_name)
+        except Exception as e:
+            # Log critical error for unhandled exceptions
+            logger.critical(f"An error occurred while scraping episode link: {e}")
+
+    async def scrape_download_link(self, soup: BeautifulSoup):
         download_page_link = soup.select_one("#dlink2")
         if download_page_link:
             download_url = self.baseurl + download_page_link["href"]
-            soup = await self.get_soup(session, download_url)
-            
-            download_button = soup.select_one(".downloadlinks2 input")
+            soup = await self.get_soup(self.session, download_url)
+
+            download_button = soup.select(".downloadlinks2 input")[1]
             if download_button:
                 return download_button['value']
         return None
-
-
