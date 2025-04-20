@@ -2,7 +2,7 @@
 
 ###### Effortlessly download films and TV shows directly from the web using a powerful and user-friendly terminal-based tool.
 
-FZBot Downloader helps you effortlessly download films and TV shows directly from the web using a powerful and user-friendly terminal-based tool.
+FZBot Downloader helps you effortlessly download films and TV shows directly from the web from your terminal.
 
 ### Key Features
 

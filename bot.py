@@ -32,7 +32,7 @@ class Downloader():
         """
         os.makedirs(folder_name, exist_ok=True)
         output_path = os.path.join(folder_name, name)
-        
+
         if os.path.exists(output_path):
             downloaded_size = os.path.getsize(output_path)
             headers = {'Range': f'bytes={downloaded_size}-'}
@@ -48,7 +48,7 @@ class Downloader():
             async with session.get(url, headers=headers) as resp:
                 if resp.status in (200, 206):
                     mode = 'ab' if downloaded_size > 0 else 'wb'
-                    progress = tqdm(total=total_size, initial=downloaded_size, unit='B', unit_scale=True, desc='Downloading')
+                    progress = tqdm(total=total_size, initial=downloaded_size, unit='B', unit_scale=True, desc=f'Downloading {name}')
 
                     async with aiofiles.open(output_path, mode) as f:
                         async for chunk in resp.content.iter_chunked(8192):
@@ -161,7 +161,36 @@ class SeriesDownloader(Scapper, Parser):
 
                 # Gather all episode scraping concurrently for this season
                 await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episode_links_parent])
-        
+        else:
+            print("ALL SEASONS in", series_url)
+            soup = await self.get_soup(self.session, series_url)
+            series_links = soup.select(".mainbox2 > a")
+
+            for series_link in series_links:
+                # single episode page
+                season_url = self.baseurl + series_link["href"]
+                logger.info("Scraping %s", series_link.text)
+
+                soup = await self.get_soup(self.session, season_url)
+
+                if self.settings['specific_episode']:
+
+                    episode_link_parent = soup.find_all(class_="mainbox")[self.settings['specific_episode'] - 1]
+                    logger.info("The number of episode for %s is %s", series_link.text, episode_link_parent)
+
+                    await self.scrape_episode_link(episode_link_parent)
+                else:
+                    print("ALL EP in", series_link.text)
+                    season_url = self.baseurl + series_link["href"]
+                    logger.info("Scraping %s", series_link.text)
+
+                    soup = await self.get_soup(self.session, season_url)
+                    episode_links_parent = soup.find_all(class_="mainbox")
+                    logger.info("The number of episode for %s is %s", series_link.text, len(episode_links_parent)) 
+
+                    # Gather all episode scraping concurrently for this season
+                    await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episode_links_parent])
+            
     async def scrape_episode_link(self, episode_link: BeautifulSoup):
         try:
             logger.debug("Scraping %s\n", episode_link.find('small').text)
@@ -238,7 +267,7 @@ async def main(*args, **kwargs):
     )
 
     timeout = aiohttp.ClientTimeout(total=0)
-    max_connection = aiohttp.TCPConnector(limit=5)
+    max_connection = aiohttp.TCPConnector(limit=2)
 
     async with aiohttp.ClientSession(connector=max_connection, timeout=timeout) as session:
         scrape_instance = SeriesDownloader(title, session, **settings)
