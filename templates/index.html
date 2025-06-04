@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Series Downloader</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Series Downloader</h1>
+        
+        <div class="download-form">
+            <h2>Start New Download</h2>
+            <form id="downloadForm">
+                <div class="form-group">
+                    <label for="title">Series Title:</label>
+                    <input type="text" id="title" name="title" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="season">Season Number (optional):</label>
+                    <input type="number" id="season" name="season" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="specific_episode">Specific Episode (optional):</label>
+                    <input type="number" id="specific_episode" name="specific_episode" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="limit_episode">Episode Limit (optional):</label>
+                    <input type="number" id="limit_episode" name="limit_episode" min="1">
+                </div>
+                
+                <button type="submit">Start Download</button>
+            </form>
+        </div>
+
+        <div class="active-downloads">
+            <h2>Active Downloads</h2>
+            <div id="downloadsList"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('downloadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                title: document.getElementById('title').value,
+                season: document.getElementById('season').value || null,
+                specific_episode: document.getElementById('specific_episode').value || null,
+                limit_episode: document.getElementById('limit_episode').value || null
+            };
+
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    document.getElementById('downloadForm').reset();
+                    updateDownloads();
+                }
+            } catch (error) {
+                alert('Error starting download: ' + error.message);
+            }
+        });
+
+        async function updateDownloads() {
+            const downloads = document.getElementById('downloadsList');
+            let activeDownloads;
+
+            try {
+                const response = await fetch('/status/all');
+                activeDownloads = await response.json();
+            } catch (error) {
+                console.error('Error fetching downloads:', error);
+                activeDownloads = {{ active_downloads | tojson }};
+            }
+            
+            downloads.innerHTML = '';
+            
+            for (const [id, download] of Object.entries(activeDownloads)) {
+                const downloadEl = document.createElement('div');
+                downloadEl.className = `download-item ${download.status}`;
+                
+                let episodesHtml = '';
+                if (download.episodes && download.episodes.length > 0) {
+                    episodesHtml = '<div class="episodes">';
+                    for (const episode of download.episodes) {
+                        episodesHtml += `
+                            <div class="episode">
+                                <span class="episode-name">${episode.name}</span>
+                                <div class="progress-bar">
+                                    <div class="progress" style="width: ${episode.progress}%"></div>
+                                </div>
+                                <span class="progress-text">${Math.round(episode.progress)}%</span>
+                            </div>
+                        `;
+                    }
+                    episodesHtml += '</div>';
+                }
+
+                downloadEl.innerHTML = `
+                    <h3>${download.title}</h3>
+                    <p>Status: ${download.status}</p>
+                    ${download.error ? `<p class="error">Error: ${download.error}</p>` : ''}
+                    <div class="overall-progress">
+                        <h4>Overall Progress</h4>
+                        <div class="progress-bar">
+                            <div class="progress" style="width: ${download.progress}%"></div>
+                        </div>
+                        <span class="progress-text">${Math.round(download.progress)}%</span>
+                    </div>
+                    ${episodesHtml}
+                `;
+                downloads.appendChild(downloadEl);
+            }
+        }
+
+        // Update downloads list every 2 seconds
+        setInterval(updateDownloads, 2000);
+        // Initial update
+        updateDownloads();
+    </script>
+</body>
+</html> 

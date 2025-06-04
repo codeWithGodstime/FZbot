@@ -8,6 +8,7 @@ import re
 from abc import ABC, abstractmethod
 from bs4 import BeautifulSoup
 from tqdm.asyncio import tqdm
+from collections import deque
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -35,10 +36,37 @@ class Scapper(ABC):
     def start(self):
         ...
 
-class Downloader():
+class DownloadQueue:
+    def __init__(self):
+        self.queue = deque()
+        self.processing = False
+        self._current_task = None
 
-    @staticmethod
-    async def download(session, url, name, folder_name):
+    async def add_download(self, download_func, *args, **kwargs):
+        """Add a download task to the queue"""
+        future = asyncio.Future()
+        self.queue.append((future, download_func, args, kwargs))
+        if not self.processing:
+            await self._process_queue()
+        return await future
+
+    async def _process_queue(self):
+        """Process downloads in the queue sequentially"""
+        self.processing = True
+        while self.queue:
+            future, download_func, args, kwargs = self.queue.popleft()
+            try:
+                result = await download_func(*args, **kwargs)
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
+        self.processing = False
+
+class Downloader():
+    def __init__(self):
+        self.download_queue = DownloadQueue()
+
+    async def download(self, session, url, name, folder_name, progress_callback=None):
         """
         Downloads a file from a given URL with support for resumable downloads.
         
@@ -47,10 +75,17 @@ class Downloader():
             url (str): The URL of the file to download.
             name (str): The name of the file to save as.
             folder_name (str): The folder to save the downloaded file in.
+            progress_callback (callable): Optional callback for progress updates.
 
         Returns:
             None
         """
+        return await self.download_queue.add_download(
+            self._download_file, session, url, name, folder_name, progress_callback
+        )
+
+    async def _download_file(self, session, url, name, folder_name, progress_callback=None):
+        """Internal method to perform the actual download"""
         os.makedirs(folder_name, exist_ok=True)
         output_path = os.path.join(folder_name, name)
 
@@ -75,12 +110,23 @@ class Downloader():
                             if chunk:
                                 await f.write(chunk)
                                 progress.update(len(chunk))
+                                if progress_callback:
+                                    # Calculate percentage
+                                    current = progress.n
+                                    percentage = (current / total_size) * 100 if total_size > 0 else 0
+                                    progress_callback(name, percentage)
+                    
                     progress.close()
-                    print("Download complete.\n")
+                    if progress_callback:
+                        progress_callback(name, 100)  # Ensure 100% is reported
+                    print(f"Download complete: {name}\n")
+                    return True
         except aiohttp.ClientError as e:
             logger.error(f"Client error occurred while downloading {name}: {e}")
+            raise
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
+            raise
 
 class Parser():
     async def get_soup(self, session, url):
@@ -91,7 +137,6 @@ class Parser():
             soup = BeautifulSoup(body, 'html.parser')
         return soup
 
-
 class SeriesDownloader(Scapper, Parser):
     def __init__(self, series_name, session,  **pref):
         self.baseurl = "https://mobiletvshows.site/"
@@ -101,6 +146,7 @@ class SeriesDownloader(Scapper, Parser):
         self.settings = pref
         self.downloader = Downloader()
         self.download_links = []
+        self.download_queue = DownloadQueue()
 
     async def scrape_search_page(self):
         """Scrapes the search page to get the series link."""
@@ -131,60 +177,55 @@ class SeriesDownloader(Scapper, Parser):
             logger.error(f"An error occurred while scraping the search page: {e}")
 
     async def scrape_seasons_link(self, series_url):
-        if self.settings['season']:
-            soup = await self.get_soup(self.session, series_url)
-            series_link = soup.select(".mainbox2 > a")[self.settings['season'] - 1]
+        if not series_url:
+            logger.error("No series URL provided")
+            return
 
-            # single episode page
+        soup = await self.get_soup(self.session, series_url)
+        series_links = soup.select(".mainbox2 > a")
+        
+        if not series_links:
+            logger.error("No seasons found")
+            return
+
+        # If specific season is requested
+        if self.settings.get('season'):
+            if self.settings['season'] > len(series_links):
+                logger.error(f"Season {self.settings['season']} not found. Only {len(series_links)} seasons available.")
+                return
+                
+            seasons_to_process = [series_links[self.settings['season'] - 1]]
+        else:
+            seasons_to_process = series_links
+
+        for series_link in seasons_to_process:
             season_url = self.baseurl + series_link["href"]
             logger.info("Scraping %s", series_link.text)
 
-            soup = await self.get_soup(self.session, season_url)
+            season_soup = await self.get_soup(self.session, season_url)
+            episode_links_parent = season_soup.find_all(class_="mainbox")
 
-            if self.settings['specific_episode']:
+            if not episode_links_parent:
+                logger.error(f"No episodes found for {series_link.text}")
+                continue
 
-                episode_link_parent = soup.find_all(class_="mainbox")[self.settings['specific_episode'] - 1]
-                logger.info("The number of episode for %s is %s", series_link.text, episode_link_parent)
+            logger.info("Found %d episodes for %s", len(episode_links_parent), series_link.text)
 
-                await self.scrape_episode_link(episode_link_parent)
+            # Handle specific episode request
+            if self.settings.get('specific_episode'):
+                if self.settings['specific_episode'] > len(episode_links_parent):
+                    logger.error(f"Episode {self.settings['specific_episode']} not found. Only {len(episode_links_parent)} episodes available.")
+                    continue
+                    
+                episodes_to_process = [episode_links_parent[self.settings['specific_episode'] - 1]]
             else:
-                season_url = self.baseurl + series_link["href"]
-                logger.info("Scraping %s", series_link.text)
+                # Handle episode limit
+                limit = self.settings.get('limit_episode', len(episode_links_parent))
+                episodes_to_process = episode_links_parent[:limit]
 
-                soup = await self.get_soup(self.session, season_url)
-                episode_links_parent = soup.find_all(class_="mainbox")
-                logger.info("The number of episode for %s is %s", series_link.text, len(episode_links_parent)) 
+            # Process episodes concurrently
+            await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episodes_to_process])
 
-                # Gather all episode scraping concurrently for this season
-                await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episode_links_parent])
-        else:
-            soup = await self.get_soup(self.session, series_url)
-            series_links = soup.select(".mainbox2 > a")
-
-            for series_link in series_links:
-                # single episode page
-                season_url = self.baseurl + series_link["href"]
-                logger.info("Scraping %s", series_link.text)
-
-                soup = await self.get_soup(self.session, season_url)
-
-                if self.settings['specific_episode']:
-
-                    episode_link_parent = soup.find_all(class_="mainbox")[self.settings['specific_episode'] - 1]
-                    logger.info("The number of episode for %s is %s", series_link.text, episode_link_parent)
-
-                    await self.scrape_episode_link(episode_link_parent)
-                else:
-                    season_url = self.baseurl + series_link["href"]
-                    logger.info("Scraping %s", series_link.text)
-
-                    soup = await self.get_soup(self.session, season_url)
-                    episode_links_parent = soup.find_all(class_="mainbox")
-                    logger.info("The number of episode for %s is %s", series_link.text, len(episode_links_parent)) 
-
-                    # Gather all episode scraping concurrently for this season
-                    await asyncio.gather(*[self.scrape_episode_link(episode_link) for episode_link in episode_links_parent])
-            
     async def scrape_episode_link(self, episode_link: BeautifulSoup):
         try:
             logger.debug("Scraping %s\n", episode_link.find('small').text)
@@ -233,14 +274,29 @@ class SeriesDownloader(Scapper, Parser):
 
     async def start(self):
         series_url = await self.scrape_search_page()
-        await self.scrape_seasons_link(series_url)
+        if series_url:
+            await self.scrape_seasons_link(series_url)
+            
+            if self.download_links:
+                logger.info(f"Starting download of {len(self.download_links)} episodes")
+                # Sort download links by episode name to ensure sequential order
+                self.download_links.sort(key=lambda x: x['name'])
+                
+                # Process downloads sequentially
+                for download in self.download_links:
+                    await self.downloader.download(
+                        self.session,
+                        download['link'],
+                        download['name'],
+                        self.series_title,
+                        self.settings.get('progress_callback')
+                    )
+            else:
+                logger.warning("No episodes were found to download")
 
-        tasks = [self.downloader.download(self.session, url.get("link"), url.get(
-            "name"), self.series_title) for url in self.download_links]
 
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-        return super().start()
+class MovieDownloader(Scapper, Parser):
+    pass
 
 
 async def main(*args, **kwargs):
@@ -311,7 +367,8 @@ def entry():
 
     asyncio.run(main(type_=arguments.type, title=arguments.title, ns=arguments.number_of_season, ne=arguments.limit_episode, se=arguments.single_episode))
 
-entry()
+if __name__ == "__main__":
+    entry()
 
 
 

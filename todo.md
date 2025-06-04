@@ -1,0 +1,7 @@
+- [ ] Implement downloading of multiple movies
+- [ ] Convert the cli from using ArgParse to click/typer
+- [ ] Improve download times
+- [ ] Implement feature to calculate estimated budget needed to download a series/movie
+- [ ] Make the program Installable
+- [ ] Allow user to specify the episode the intend to download
+- [ ] Queue Download order in respest to their episode number
