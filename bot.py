@@ -35,6 +35,7 @@ class Scapper(ABC):
     def start(self):
         ...
 
+
 class Downloader():
 
     @staticmethod
@@ -52,7 +53,8 @@ class Downloader():
             None
         """
         os.makedirs(folder_name, exist_ok=True)
-        output_path = os.path.join(folder_name, name)
+        new_name = name.replace("?", "")
+        output_path = os.path.join(folder_name, new_name)
 
         if os.path.exists(output_path):
             downloaded_size = os.path.getsize(output_path)
@@ -81,6 +83,7 @@ class Downloader():
             logger.error(f"Client error occurred while downloading {name}: {e}")
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
+
 
 class Parser():
     async def get_soup(self, session, url):
@@ -243,6 +246,17 @@ class SeriesDownloader(Scapper, Parser):
         return super().start()
 
 
+class SeriesDownloaderWithoutSearch(SeriesDownloader):
+    async def start(self, url):
+        series_url = url
+        await self.scrape_seasons_link(series_url)
+
+        tasks = [self.downloader.download(self.session, url.get("link"), url.get(
+            "name"), self.series_title) for url in self.download_links]
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def main(*args, **kwargs):
 
     title = kwargs['title']
@@ -250,6 +264,7 @@ async def main(*args, **kwargs):
     limit_episode = kwargs['ne']
     season = kwargs['ns']
     specific_episode = kwargs['se']
+    url = kwargs['url']
 
     settings = dict(
         title=title,
@@ -266,8 +281,13 @@ async def main(*args, **kwargs):
         if type == 'movie':
             pass
         else: 
-            scrape_instance = SeriesDownloader(title, session, **settings)
-            await scrape_instance.start()
+            if url:
+                instance = SeriesDownloaderWithoutSearch(title, session, **settings)
+                await instance.start(url)
+            else:
+                scrape_instance = SeriesDownloader(title, session, **settings)
+                await scrape_instance.start()
+
 
 def entry():
     parser = argparse.ArgumentParser(
@@ -307,11 +327,15 @@ def entry():
         help="Restrict the number of episodes you want to download"
     )
 
+    parser.add_argument(
+        "-url",
+        "--url",
+        type=str,
+        help="URl of the series you want to download"
+    )
+
     arguments = parser.parse_args()
 
-    asyncio.run(main(type_=arguments.type, title=arguments.title, ns=arguments.number_of_season, ne=arguments.limit_episode, se=arguments.single_episode))
+    asyncio.run(main(type_=arguments.type, title=arguments.title, url=arguments.url, ns=arguments.number_of_season, ne=arguments.limit_episode, se=arguments.single_episode))
 
 entry()
-
-
-
