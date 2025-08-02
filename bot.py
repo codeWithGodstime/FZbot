@@ -306,23 +306,23 @@ def entry():
     )
 
     parser.add_argument(
-        '-ns', "--number_of_season",
+        '-season', "--season",
         metavar="NS",
         type=int,
         help="Specify the season you want to download"
     )
 
     parser.add_argument(
-        "-ne",
-        "--limit_episode",
+        "-max_downloads",
+        "--max_downloads",
         type=int,
         default=10,
         help="Restrict the number of episodes you want to download"
     )
 
     parser.add_argument(
-        "-se",
-        "--single_episode",
+        "-episode",
+        "--episode",
         type=int,
         help="Restrict the number of episodes you want to download"
     )
@@ -336,6 +336,6 @@ def entry():
 
     arguments = parser.parse_args()
 
-    asyncio.run(main(type_=arguments.type, title=arguments.title, url=arguments.url, ns=arguments.number_of_season, ne=arguments.limit_episode, se=arguments.single_episode))
+    asyncio.run(main(type_=arguments.type, title=arguments.title, url=arguments.url, ns=arguments.season, ne=arguments.max_downloads, se=arguments.episode))
 
 entry()
