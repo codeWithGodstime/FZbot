@@ -8,7 +8,7 @@ import re
 from abc import ABC, abstractmethod
 from bs4 import BeautifulSoup
 from tqdm.asyncio import tqdm
-
+ 
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__file__)
@@ -86,6 +86,7 @@ class Downloader():
 
 
 class Parser():
+    
     async def get_soup(self, session, url):
         """Fetches the page content and returns a BeautifulSoup object."""
         soup = None
@@ -265,6 +266,7 @@ async def main(*args, **kwargs):
     season = kwargs['ns']
     specific_episode = kwargs['se']
     url = kwargs['url']
+    concurrent = kwargs['concurrent']
 
     settings = dict(
         title=title,
@@ -275,7 +277,7 @@ async def main(*args, **kwargs):
     )
 
     timeout = aiohttp.ClientTimeout(total=0)
-    max_connection = aiohttp.TCPConnector(limit=2)
+    max_connection = aiohttp.TCPConnector(limit=concurrent)
 
     async with aiohttp.ClientSession(connector=max_connection, timeout=timeout) as session:
         if type == 'movie':
@@ -332,6 +334,14 @@ def entry():
         "--url",
         type=str,
         help="URl of the series you want to download"
+    )
+
+    parser.add_argument(
+            "concurrent",
+            "--concurrent",
+            type=int,
+            default=3,
+            help="set the number of concurrent downloads"
     )
 
     arguments = parser.parse_args()
