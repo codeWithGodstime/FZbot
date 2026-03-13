@@ -337,7 +337,7 @@ def entry():
     )
 
     parser.add_argument(
-            "concurrent",
+            "-concurrent",
             "--concurrent",
             type=int,
             default=3,
@@ -346,6 +346,6 @@ def entry():
 
     arguments = parser.parse_args()
 
-    asyncio.run(main(type_=arguments.type, title=arguments.title, url=arguments.url, ns=arguments.season, ne=arguments.max_downloads, se=arguments.episode))
+    asyncio.run(main(type_=arguments.type, title=arguments.title, url=arguments.url, ns=arguments.season, ne=arguments.max_downloads, se=arguments.episode, concurrent=arguments.concurrent))
 
 entry()
