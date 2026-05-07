@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from collections.abc import Callable
 
 import aiohttp
@@ -16,9 +17,13 @@ class DownloadOrchestrator:
         self,
         config: AppConfig,
         event_callback: Callable[[DownloadEvent], None] | None = None,
+        pause_event: asyncio.Event | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> None:
         self.config = config
         self.event_callback = event_callback
+        self.pause_event = pause_event
+        self.cancel_event = cancel_event
 
     async def collect_downloads(self) -> list[DownloadItem]:
         timeout = aiohttp.ClientTimeout(total=self.config.request_timeout_seconds)
@@ -46,6 +51,8 @@ class DownloadOrchestrator:
                 session=session,
                 concurrency=self.config.concurrent_downloads,
                 event_callback=self.event_callback,
+                pause_event=self.pause_event,
+                cancel_event=self.cancel_event,
             )
             await manager.download_all(downloads, self.config.output_dir)
         return downloads

@@ -51,12 +51,20 @@ class BrowserJob:
     message: str = "Waiting to start"
     downloads: dict[str, DownloadRecord] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
+    pause_event: asyncio.Event = field(default_factory=asyncio.Event)
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    direct_url: str | None = None
+
+    def __post_init__(self) -> None:
+        self.pause_event.set()
 
     def summary(self) -> dict[str, Any]:
         items = [record.to_dict() for record in self.downloads.values()]
         completed = sum(1 for item in items if item["status"] == "completed")
         failed = sum(1 for item in items if item["status"] == "failed")
+        cancelled = sum(1 for item in items if item["status"] == "cancelled")
         active = sum(1 for item in items if item["status"] in {"starting", "downloading"})
+        paused = sum(1 for item in items if item["status"] == "paused")
         queued = sum(1 for item in items if item["status"] in {"pending", "queued"})
         return {
             "job_id": self.job_id,
@@ -68,12 +76,16 @@ class BrowserJob:
             "max_downloads": self.max_downloads,
             "status": self.status,
             "message": self.message,
+            "is_paused": not self.pause_event.is_set(),
+            "is_cancelled": self.cancel_event.is_set(),
             "downloads": items,
             "counts": {
                 "total": len(items),
                 "completed": completed,
                 "failed": failed,
+                "cancelled": cancelled,
                 "active": active,
+                "paused": paused,
                 "queued": queued,
             },
         }
@@ -476,6 +488,40 @@ JOB_HTML = """<!DOCTYPE html>
       background: rgba(180, 35, 24, 0.12);
       color: var(--bad);
     }}
+    .status.cancelled {{
+      background: rgba(102, 112, 133, 0.16);
+      color: var(--muted);
+    }}
+    .status.paused {{
+      background: rgba(54, 123, 186, 0.14);
+      color: #1f4c7a;
+    }}
+    .controls {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }}
+    .control {{
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .control.pause {{
+      color: white;
+      background: linear-gradient(135deg, #367bba 0%, #1f4c7a 100%);
+    }}
+    .control.cancel {{
+      color: white;
+      background: linear-gradient(135deg, #b42318 0%, #7a1d14 100%);
+    }}
+    .control:disabled {{
+      opacity: 0.45;
+      cursor: not-allowed;
+    }}
     .progress {{
       height: 10px;
       border-radius: 999px;
@@ -520,6 +566,10 @@ JOB_HTML = """<!DOCTYPE html>
         <div class="stat"><span>Active</span><strong id="count-active">0</strong></div>
         <div class="stat"><span>Failed</span><strong id="count-failed">0</strong></div>
       </div>
+      <div class="controls">
+        <button id="pause-button" class="control pause" type="button">Pause</button>
+        <button id="cancel-button" class="control cancel" type="button">Cancel all</button>
+      </div>
     </section>
 
     <section class="list">
@@ -554,6 +604,11 @@ JOB_HTML = """<!DOCTYPE html>
       document.getElementById("count-completed").textContent = data.counts.completed;
       document.getElementById("count-active").textContent = data.counts.active;
       document.getElementById("count-failed").textContent = data.counts.failed;
+      const pauseButton = document.getElementById("pause-button");
+      const cancelButton = document.getElementById("cancel-button");
+      pauseButton.textContent = data.is_paused ? "Resume" : "Pause";
+      pauseButton.disabled = data.is_cancelled || ["completed", "failed", "completed_with_errors", "cancelled"].includes(data.status);
+      cancelButton.disabled = data.is_cancelled || ["completed", "failed", "completed_with_errors", "cancelled"].includes(data.status);
 
       const root = document.getElementById("downloads");
       if (!data.downloads.length) {{
@@ -575,6 +630,33 @@ JOB_HTML = """<!DOCTYPE html>
         </article>
       `).join("");
     }}
+
+    async function sendControl(action) {{
+      const response = await fetch(`/jobs/${{jobId}}/${{action}}`, {{
+        method: "POST"
+      }});
+      if (!response.ok) {{
+        throw new Error(`HTTP ${{response.status}}`);
+      }}
+      const data = await response.json();
+      renderJob(data);
+    }}
+
+    document.getElementById("pause-button").addEventListener("click", async () => {{
+      try {{
+        await sendControl("pause");
+      }} catch (error) {{
+        document.getElementById("message").textContent = `Pause failed: ${{error.message}}`;
+      }}
+    }});
+
+    document.getElementById("cancel-button").addEventListener("click", async () => {{
+      try {{
+        await sendControl("cancel");
+      }} catch (error) {{
+        document.getElementById("message").textContent = `Cancel failed: ${{error.message}}`;
+      }}
+    }});
 
     async function poll() {{
       try {{
@@ -667,8 +749,9 @@ async def create_job(request: web.Request) -> web.StreamResponse:
     )
 
     url = str(form.get("url", "")).strip() or None
+    job.direct_url = url
     job.message = "Preparing series lookup and download queue"
-    job.task = asyncio.create_task(_run_job(job, url))
+    job.task = asyncio.create_task(_run_job(job))
     raise web.HTTPFound(location=f"/jobs/{job.job_id}")
 
 
@@ -688,6 +771,49 @@ async def job_api(request: web.Request) -> web.Response:
     return web.json_response(job.summary())
 
 
+async def pause_job(request: web.Request) -> web.Response:
+    store: JobStore = request.app["job_store"]
+    job = store.get(request.match_info["job_id"])
+    if not job:
+        raise web.HTTPNotFound(text="job not found")
+
+    if job.cancel_event.is_set() or job.status in {"completed", "failed", "completed_with_errors", "cancelled"}:
+        return web.json_response(job.summary())
+
+    if job.pause_event.is_set():
+        job.pause_event.clear()
+        job.status = "paused"
+        job.message = "Pause requested. Active downloads will stop at the next chunk boundary."
+    else:
+        job.pause_event.set()
+        job.status = "running"
+        job.message = "Resuming downloads."
+
+    return web.json_response(job.summary())
+
+
+async def cancel_job(request: web.Request) -> web.Response:
+    store: JobStore = request.app["job_store"]
+    job = store.get(request.match_info["job_id"])
+    if not job:
+        raise web.HTTPNotFound(text="job not found")
+
+    job.cancel_event.set()
+    job.pause_event.set()
+    job.status = "cancelled"
+    job.message = "Cancellation requested. Active downloads are stopping."
+
+    for record in job.downloads.values():
+        if record.status not in {"completed", "failed", "cancelled"}:
+            record.status = "cancelled"
+            record.detail = "Cancelled by user"
+
+    if job.task and not job.task.done():
+        job.task.cancel()
+
+    return web.json_response(job.summary())
+
+
 def _handle_event(job: BrowserJob, event: DownloadEvent) -> None:
     record = job.downloads.setdefault(event.name, DownloadRecord(name=event.name))
     record.status = event.status
@@ -704,29 +830,43 @@ def _handle_event(job: BrowserJob, event: DownloadEvent) -> None:
     elif event.status == "downloading":
         job.status = "running"
         job.message = f"Downloading {event.name}"
+    elif event.status == "paused":
+        job.status = "paused"
+        job.message = f"Paused {event.name}"
     elif event.status == "completed":
         job.message = f"Completed {event.name}"
+    elif event.status == "cancelled":
+        job.message = f"Cancelled {event.name}"
     elif event.status == "failed":
         job.message = f"Failed {event.name}"
 
 
-async def _run_job(job: BrowserJob, direct_url: str | None) -> None:
+async def _run_job(job: BrowserJob) -> None:
     config = AppConfig(
         title=job.title,
         media_type=job.media_type,
         season=job.season,
         max_downloads=job.max_downloads,
         specific_episode=job.episode,
-        url=direct_url,
+        url=job.direct_url,
         concurrent_downloads=job.concurrent,
         request_timeout_seconds=None,
     )
-    orchestrator = DownloadOrchestrator(config=config, event_callback=lambda event: _handle_event(job, event))
+    orchestrator = DownloadOrchestrator(
+        config=config,
+        event_callback=lambda event: _handle_event(job, event),
+        pause_event=job.pause_event,
+        cancel_event=job.cancel_event,
+    )
 
     try:
         job.status = "running"
         job.message = "Collecting episode links from MobileTVShows"
         downloads = await orchestrator.run()
+        if job.cancel_event.is_set():
+            job.status = "cancelled"
+            job.message = "All remaining downloads were cancelled."
+            return
         if not downloads:
             if job.media_type == "movie":
                 job.status = "failed"
@@ -742,6 +882,10 @@ async def _run_job(job: BrowserJob, direct_url: str | None) -> None:
         else:
             job.status = "completed"
             job.message = "All downloads finished."
+    except asyncio.CancelledError:
+        logger.info("Job %s cancelled by user", job.job_id)
+        job.status = "cancelled"
+        job.message = "All remaining downloads were cancelled."
     except Exception:
         logger.exception("Job %s failed", job.job_id)
         job.status = "failed"
@@ -755,6 +899,8 @@ def create_app() -> web.Application:
     app.router.add_post("/jobs", create_job)
     app.router.add_get("/jobs/{job_id}", job_page)
     app.router.add_get("/api/jobs/{job_id}", job_api)
+    app.router.add_post("/jobs/{job_id}/pause", pause_job)
+    app.router.add_post("/jobs/{job_id}/cancel", cancel_job)
     return app
 
 
