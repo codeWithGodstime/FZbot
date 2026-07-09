@@ -3,12 +3,18 @@ import asyncio
 import logging
 import sys
 
+
 def build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="A CLI utility program to download movies and series from MobileTVShows."
+        description="A CLI utility program to download movies and series from FZmovies and MobileTVShows."
     )
     parser.add_argument("type", help="Movie or Series", choices=["movie", "series"])
-    parser.add_argument("title", help="Name of movie/series you want to download")
+    parser.add_argument(
+        "title",
+        nargs="+",
+        metavar="TITLE",
+        help="Name of movie(s) or series to download. Movies accept multiple titles.",
+    )
     parser.add_argument(
         "-season",
         "--season",
@@ -21,7 +27,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "--max_downloads",
         type=int,
         default=10,
-        help="Restrict the number of episodes you want to download",
+        help="Restrict the number of episodes or movies you want to download",
     )
     parser.add_argument(
         "-episode",
@@ -33,7 +39,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "-url",
         "--url",
         type=str,
-        help="URL of the series you want to download",
+        help="Direct URL for a single movie or series",
     )
     parser.add_argument(
         "-concurrent",
@@ -65,12 +71,23 @@ def build_root_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def run_cli(arguments: argparse.Namespace) -> None:
+def _build_config(arguments: argparse.Namespace) -> "AppConfig":
     from app.core.config import AppConfig
-    from app.core.orchestrator import DownloadOrchestrator
 
-    config = AppConfig(
-        title=arguments.title,
+    if arguments.type == "movie":
+        titles = AppConfig._dedupe_titles(arguments.title)
+        return AppConfig(
+            title=AppConfig.format_batch_title(titles),
+            media_type=arguments.type,
+            max_downloads=arguments.max_downloads,
+            url=arguments.url,
+            concurrent_downloads=arguments.concurrent,
+            request_timeout_seconds=None,
+            titles=titles,
+        )
+
+    return AppConfig(
+        title=arguments.title[0],
         media_type=arguments.type,
         season=arguments.season,
         max_downloads=arguments.max_downloads,
@@ -79,6 +96,12 @@ async def run_cli(arguments: argparse.Namespace) -> None:
         concurrent_downloads=arguments.concurrent,
         request_timeout_seconds=None,
     )
+
+
+async def run_cli(arguments: argparse.Namespace) -> None:
+    from app.core.orchestrator import DownloadOrchestrator
+
+    config = _build_config(arguments)
     orchestrator = DownloadOrchestrator(config=config)
     await orchestrator.run()
 

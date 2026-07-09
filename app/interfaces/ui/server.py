@@ -54,6 +54,7 @@ class BrowserJob:
     pause_event: asyncio.Event = field(default_factory=asyncio.Event)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     direct_url: str | None = None
+    titles: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.pause_event.set()
@@ -251,7 +252,7 @@ SHARED_STYLES = """
       font-size: 0.75rem;
       color: rgba(148, 163, 184, 0.7);
     }
-    input, select {
+    input, select, textarea {
       width: 100%;
       border: 1px solid var(--space-border);
       border-radius: 10px;
@@ -262,13 +263,20 @@ SHARED_STYLES = """
       background: rgba(5, 5, 16, 0.6);
       transition: border-color 0.2s, box-shadow 0.2s;
     }
-    input:focus, select:focus {
+    input:focus, select:focus, textarea:focus {
       outline: none;
       border-color: var(--accent-cyan);
       box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
     }
-    input::placeholder {
+    input::placeholder, textarea::placeholder {
       color: rgba(148, 163, 184, 0.5);
+    }
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .hidden-field {
+      display: none;
     }
     .row {
       display: grid;
@@ -634,28 +642,32 @@ INDEX_HTML = """<!DOCTYPE html>
       <form method="post" action="/jobs">
         <div class="form-section">
           <p class="section-label">Target</p>
-          <label>
+          <label id="series-title-field">
             Title
-            <input name="title" placeholder="e.g. Breaking Bad" required>
+            <input name="title" placeholder="e.g. Breaking Bad">
+          </label>
+          <label id="movie-titles-field" class="hidden-field">
+            Movie titles
+            <textarea name="titles" placeholder="One movie per line or comma-separated&#10;e.g. Inception&#10;Interstellar"></textarea>
           </label>
           <div class="row">
             <label>
               Media type
-              <select name="media_type">
+              <select name="media_type" id="media-type">
                 <option value="series" selected>Series</option>
                 <option value="movie">Movie</option>
               </select>
             </label>
             <label>
               Direct URL <span class="optional">optional</span>
-              <input name="url" placeholder="mobiletvshows URL">
+              <input name="url" id="direct-url" placeholder="mobiletvshows URL">
             </label>
           </div>
         </div>
 
-        <div class="form-section">
+        <div class="form-section" id="scope-section">
           <p class="section-label">Scope</p>
-          <div class="row">
+          <div class="row" id="series-scope-fields">
             <label>
               Season <span class="optional">optional</span>
               <input type="number" name="season" min="1" placeholder="All seasons">
@@ -666,7 +678,7 @@ INDEX_HTML = """<!DOCTYPE html>
             </label>
           </div>
           <label>
-            Max downloads
+            <span id="max-downloads-label">Max downloads</span>
             <input type="number" name="max_downloads" min="1" value="10">
           </label>
         </div>
@@ -691,6 +703,26 @@ INDEX_HTML = """<!DOCTYPE html>
       </div>
     </article>
   </main>
+  <script>
+    const mediaType = document.getElementById("media-type");
+    const seriesTitleField = document.getElementById("series-title-field");
+    const movieTitlesField = document.getElementById("movie-titles-field");
+    const seriesScopeFields = document.getElementById("series-scope-fields");
+    const directUrl = document.getElementById("direct-url");
+    const maxDownloadsLabel = document.getElementById("max-downloads-label");
+
+    function updateMediaTypeFields() {{
+      const isMovie = mediaType.value === "movie";
+      seriesTitleField.classList.toggle("hidden-field", isMovie);
+      movieTitlesField.classList.toggle("hidden-field", !isMovie);
+      seriesScopeFields.classList.toggle("hidden-field", isMovie);
+      directUrl.placeholder = isMovie ? "fzmovies.net URL" : "mobiletvshows URL";
+      maxDownloadsLabel.textContent = isMovie ? "Max movies" : "Max downloads";
+    }}
+
+    mediaType.addEventListener("change", updateMediaTypeFields);
+    updateMediaTypeFields();
+  </script>
 </body>
 </html>
 """
@@ -914,22 +946,38 @@ async def create_job(request: web.Request) -> web.StreamResponse:
     store: JobStore = request.app["job_store"]
     form = await request.post()
 
+    media_type = str(form.get("media_type", "series"))
+    titles_text = str(form.get("titles", "")).strip()
     title = str(form.get("title", "")).strip()
-    if not title:
-        raise web.HTTPBadRequest(text="title is required")
+
+    if media_type == "movie":
+        titles = AppConfig.parse_titles_text(titles_text) if titles_text else AppConfig.parse_titles_text(title)
+        if not titles:
+            raise web.HTTPBadRequest(text="at least one movie title is required")
+        display_title = AppConfig.format_batch_title(titles)
+    else:
+        if not title:
+            raise web.HTTPBadRequest(text="title is required")
+        titles = []
+        display_title = title
 
     job = store.create_job(
-        title=title,
-        media_type=str(form.get("media_type", "series")),
-        season=_to_int(form.get("season")),
-        episode=_to_int(form.get("episode")),
+        title=display_title,
+        media_type=media_type,
+        season=_to_int(form.get("season")) if media_type == "series" else None,
+        episode=_to_int(form.get("episode")) if media_type == "series" else None,
         concurrent=_to_int(form.get("concurrent")) or 3,
         max_downloads=_to_int(form.get("max_downloads")) or 10,
     )
 
     url = str(form.get("url", "")).strip() or None
     job.direct_url = url
-    job.message = "Preparing series lookup and download queue"
+    job.titles = titles
+    job.message = (
+        "Preparing movie lookup and download queue"
+        if media_type == "movie"
+        else "Preparing series lookup and download queue"
+    )
     job.task = asyncio.create_task(_run_job(job))
     raise web.HTTPFound(location=f"/jobs/{job.job_id}")
 
@@ -1030,6 +1078,7 @@ async def _run_job(job: BrowserJob) -> None:
         url=job.direct_url,
         concurrent_downloads=job.concurrent,
         request_timeout_seconds=None,
+        titles=job.titles,
     )
     orchestrator = DownloadOrchestrator(
         config=config,
@@ -1040,18 +1089,20 @@ async def _run_job(job: BrowserJob) -> None:
 
     try:
         job.status = "running"
-        job.message = "Collecting episode links from MobileTVShows"
+        if job.media_type == "movie":
+            job.message = "Collecting movie links from FZmovies"
+        else:
+            job.message = "Collecting episode links from MobileTVShows"
         downloads = await orchestrator.run()
         if job.cancel_event.is_set():
             job.status = "cancelled"
             job.message = "All remaining downloads were cancelled."
             return
         if not downloads:
+            job.status = "failed"
             if job.media_type == "movie":
-                job.status = "failed"
-                job.message = "Movie downloads are not implemented yet."
+                job.message = "No downloads were found for the requested movie titles."
             else:
-                job.status = "failed"
                 job.message = "No downloads were found for the requested title."
             return
 

@@ -41,7 +41,8 @@ class DownloadManager:
                 self._emit(DownloadEvent(name=item.name, status="cancelled", detail="Cancelled by user"))
                 return
             await self._wait_if_paused(item.name)
-            await self.download(item.url, item.name, folder_name)
+            target_folder = os.path.join(folder_name, item.subdir) if item.subdir else folder_name
+            await self.download(item.url, item.name, target_folder)
 
     async def download(self, url: str, name: str, folder_name: str) -> None:
         os.makedirs(folder_name, exist_ok=True)

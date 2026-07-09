@@ -7,7 +7,7 @@ import aiohttp
 from app.core.config import AppConfig
 from app.core.downloader import DownloadManager
 from app.core.models import DownloadEvent, DownloadItem
-from app.core.scraper import SeriesScraper
+from app.core.scraper import MovieScraper, SeriesScraper
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,34 @@ class DownloadOrchestrator:
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             if self.config.media_type == "movie":
-                logger.warning("Movie downloads are not implemented yet.")
-                return []
+                return await self._collect_movie_downloads(session)
 
             scraper = SeriesScraper(session=session, config=self.config)
             return await scraper.collect_downloads()
+
+    async def _collect_movie_downloads(self, session: aiohttp.ClientSession) -> list[DownloadItem]:
+        titles = self.config.movie_titles
+        if not titles:
+            logger.warning("No movie titles provided.")
+            return []
+
+        results = await asyncio.gather(
+            *[
+                MovieScraper(session=session, config=self.config, movie_title=title).collect_downloads()
+                for title in titles
+            ]
+        )
+
+        downloads: list[DownloadItem] = []
+        for title, items in zip(titles, results, strict=True):
+            if not items:
+                logger.warning("No download link collected for movie '%s'.", title)
+            downloads.extend(items)
+
+        limit = self.config.max_downloads
+        if limit and limit > 0:
+            return downloads[:limit]
+        return downloads
 
     async def run(self) -> list[DownloadItem]:
         downloads = await self.collect_downloads()
@@ -46,7 +69,6 @@ class DownloadOrchestrator:
         timeout = aiohttp.ClientTimeout(total=self.config.request_timeout_seconds)
         connector = aiohttp.TCPConnector(limit=self.config.concurrent_downloads)
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            manager = DownloadManager(session=session, concurrency=self.config.concurrent_downloads)
             manager = DownloadManager(
                 session=session,
                 concurrency=self.config.concurrent_downloads,

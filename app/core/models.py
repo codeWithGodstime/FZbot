@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class DownloadItem:
     name: str
     url: str
+    subdir: str | None = None
 
 
 @dataclass(slots=True)
