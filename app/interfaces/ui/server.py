@@ -121,202 +121,523 @@ class JobStore:
         return self.jobs.get(job_id)
 
 
+SHARED_STYLES = """
+    :root {
+      --space-bg: #050510;
+      --space-surface: rgba(15, 23, 42, 0.8);
+      --space-border: rgba(34, 211, 238, 0.2);
+      --accent-cyan: #22d3ee;
+      --accent-purple: #a855f7;
+      --text-primary: #e2e8f0;
+      --text-muted: #94a3b8;
+      --success: #34d399;
+      --error: #f87171;
+      --warning: #fbbf24;
+      --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.3);
+      --glow-purple: 0 0 24px rgba(168, 85, 247, 0.25);
+      --shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      color: var(--text-primary);
+      background: linear-gradient(160deg, #050510 0%, #0f172a 50%, #1e1b4b 100%);
+      min-height: 100vh;
+      position: relative;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        radial-gradient(1px 1px at 20px 30px, rgba(255,255,255,0.7), transparent),
+        radial-gradient(1px 1px at 80px 120px, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1.5px 1.5px at 160px 60px, rgba(255,255,255,0.6), transparent),
+        radial-gradient(1px 1px at 240px 180px, rgba(255,255,255,0.4), transparent),
+        radial-gradient(1px 1px at 320px 90px, rgba(255,255,255,0.55), transparent),
+        radial-gradient(1.5px 1.5px at 400px 200px, rgba(255,255,255,0.45), transparent),
+        radial-gradient(1px 1px at 500px 40px, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1px 1px at 600px 150px, rgba(255,255,255,0.35), transparent);
+      background-size: 650px 220px;
+      opacity: 0.55;
+      animation: twinkle 8s ease-in-out infinite alternate;
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse at 15% 10%, rgba(168, 85, 247, 0.18), transparent 45%),
+        radial-gradient(ellipse at 85% 80%, rgba(34, 211, 238, 0.12), transparent 40%);
+    }
+    @keyframes twinkle {
+      from { opacity: 0.4; }
+      to { opacity: 0.7; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--accent-cyan); }
+      50% { opacity: 0.5; box-shadow: 0 0 2px var(--accent-cyan); }
+    }
+    h1, h2, h3 {
+      font-family: "Orbitron", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    h2 {
+      margin: 0 0 20px;
+      font-size: 1.1rem;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+    }
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      background: rgba(5, 5, 16, 0.85);
+      border-bottom: 1px solid var(--space-border);
+      backdrop-filter: blur(12px);
+    }
+    .site-header .brand {
+      font-family: "Orbitron", sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      text-decoration: none;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .site-header .tagline {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+    }
+    .shell {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+      position: relative;
+      z-index: 1;
+    }
+    .shell.wide {
+      max-width: 960px;
+    }
+    .card {
+      background: var(--space-surface);
+      border: 1px solid var(--space-border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+    .card-glow {
+      box-shadow: var(--shadow), var(--glow-cyan);
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+    }
+    label .optional {
+      font-size: 0.75rem;
+      color: rgba(148, 163, 184, 0.7);
+    }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--space-border);
+      border-radius: 10px;
+      padding: 11px 14px;
+      font: inherit;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      background: rgba(5, 5, 16, 0.6);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+    }
+    input::placeholder {
+      color: rgba(148, 163, 184, 0.5);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .btn-primary {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 15px 20px;
+      font-family: "Orbitron", sans-serif;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #050510;
+      background: linear-gradient(135deg, var(--accent-cyan) 0%, #06b6d4 100%);
+      cursor: pointer;
+      box-shadow: var(--glow-cyan);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 30px rgba(34, 211, 238, 0.5);
+    }
+    .hint {
+      margin: 16px 0 0;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+    .section-label {
+      font-family: "Orbitron", sans-serif;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent-purple);
+      margin: 0 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(168, 85, 247, 0.25);
+    }
+    .form-section {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .form-section:last-of-type {
+      margin-bottom: 24px;
+    }
+    .mission-list {
+      display: grid;
+      gap: 12px;
+    }
+    .mission-card {
+      border: 1px solid var(--space-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: rgba(5, 5, 16, 0.5);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .mission-card:hover {
+      border-color: rgba(34, 211, 238, 0.45);
+      box-shadow: var(--glow-cyan);
+    }
+    .mission-card a {
+      color: inherit;
+      text-decoration: none;
+      display: block;
+    }
+    .mission-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .mission-meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .status-badge {
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-family: "Orbitron", sans-serif;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(34, 211, 238, 0.12);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(34, 211, 238, 0.3);
+      white-space: nowrap;
+    }
+    .status-badge.completed {
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--success);
+      border-color: rgba(52, 211, 153, 0.3);
+    }
+    .status-badge.failed {
+      background: rgba(248, 113, 113, 0.12);
+      color: var(--error);
+      border-color: rgba(248, 113, 113, 0.3);
+    }
+    .status-badge.cancelled {
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-muted);
+      border-color: rgba(148, 163, 184, 0.25);
+    }
+    .status-badge.running, .status-badge.queued {
+      background: rgba(168, 85, 247, 0.12);
+      color: var(--accent-purple);
+      border-color: rgba(168, 85, 247, 0.3);
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 0;
+      margin-bottom: 24px;
+      background: rgba(5, 5, 16, 0.75);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--space-border);
+    }
+    .topbar a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .topbar a:hover {
+      text-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
+    }
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .job-status-label {
+      font-family: "Orbitron", sans-serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-purple);
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .stat {
+      border: 1px solid var(--space-border);
+      border-radius: 12px;
+      padding: 14px;
+      background: rgba(5, 5, 16, 0.5);
+      text-align: center;
+    }
+    .stat span {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .stat strong {
+      display: block;
+      font-family: "Orbitron", sans-serif;
+      font-size: 1.5rem;
+      color: var(--accent-cyan);
+      text-shadow: var(--glow-cyan);
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--space-border);
+    }
+    .control {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-family: "Orbitron", sans-serif;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: opacity 0.2s, box-shadow 0.2s;
+    }
+    .control.pause {
+      color: #050510;
+      background: linear-gradient(135deg, var(--accent-cyan) 0%, #06b6d4 100%);
+      box-shadow: var(--glow-cyan);
+    }
+    .control.cancel {
+      color: var(--text-primary);
+      background: rgba(248, 113, 113, 0.15);
+      border: 1px solid rgba(248, 113, 113, 0.4);
+    }
+    .control.cancel:hover:not(:disabled) {
+      background: rgba(248, 113, 113, 0.25);
+      box-shadow: 0 0 16px rgba(248, 113, 113, 0.3);
+    }
+    .control:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .list-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .downloads {
+      display: grid;
+      gap: 12px;
+    }
+    .download {
+      border: 1px solid var(--space-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: rgba(5, 5, 16, 0.45);
+    }
+    .download-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .download-head strong {
+      font-size: 0.92rem;
+    }
+    .status {
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-family: "Orbitron", sans-serif;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: rgba(34, 211, 238, 0.1);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(34, 211, 238, 0.25);
+    }
+    .status.completed {
+      background: rgba(52, 211, 153, 0.1);
+      color: var(--success);
+      border-color: rgba(52, 211, 153, 0.3);
+    }
+    .status.failed {
+      background: rgba(248, 113, 113, 0.1);
+      color: var(--error);
+      border-color: rgba(248, 113, 113, 0.3);
+    }
+    .status.cancelled {
+      background: rgba(148, 163, 184, 0.1);
+      color: var(--text-muted);
+      border-color: rgba(148, 163, 184, 0.25);
+    }
+    .status.paused {
+      background: rgba(251, 191, 36, 0.1);
+      color: var(--warning);
+      border-color: rgba(251, 191, 36, 0.3);
+    }
+    .status.downloading, .status.starting {
+      background: rgba(168, 85, 247, 0.1);
+      color: var(--accent-purple);
+      border-color: rgba(168, 85, 247, 0.3);
+    }
+    .progress {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.1);
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent-cyan) 0%, var(--accent-purple) 100%);
+      box-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
+      transition: width 0.25s ease;
+    }
+    .meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .intro-lede {
+      margin: 0 0 28px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+    .intro-lede h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      color: var(--text-primary);
+      letter-spacing: 0.08em;
+    }
+    @media (max-width: 640px) {
+      .row, .summary {
+        grid-template-columns: 1fr;
+      }
+      .download-head, .topbar, .list-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .site-header .tagline {
+        display: none;
+      }
+    }
+"""
+
 INDEX_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FZbot Web UI</title>
+  <title>FZbot Mission Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Orbitron:wght@600;700&display=swap" rel="stylesheet">
   <style>
-    :root {{
-      --bg: #f4efe8;
-      --panel: rgba(255, 252, 247, 0.9);
-      --ink: #1f2933;
-      --accent: #d66a1f;
-      --accent-dark: #9b3d12;
-      --muted: #6b7280;
-      --line: rgba(31, 41, 51, 0.12);
-      --success: #1f7a4f;
-      --error: #b42318;
-      --shadow: 0 22px 45px rgba(94, 57, 30, 0.16);
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at top left, rgba(214, 106, 31, 0.18), transparent 28%),
-        radial-gradient(circle at bottom right, rgba(54, 123, 186, 0.18), transparent 22%),
-        linear-gradient(135deg, #f7f1e8 0%, #efe4d6 100%);
-      min-height: 100vh;
-    }}
-    .shell {{
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 40px 20px 56px;
-    }}
-    .hero {{
-      display: grid;
-      grid-template-columns: 1.2fr 0.8fr;
-      gap: 24px;
-      align-items: start;
-      margin-bottom: 24px;
-    }}
-    .card {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(8px);
-    }}
-    .intro {{
-      padding: 28px;
-    }}
-    h1 {{
-      margin: 0 0 12px;
-      font-size: clamp(2.5rem, 5vw, 4.6rem);
-      line-height: 0.95;
-      letter-spacing: -0.05em;
-    }}
-    .lede {{
-      margin: 0;
-      font-size: 1.08rem;
-      line-height: 1.7;
-      color: var(--muted);
-      max-width: 36rem;
-    }}
-    .meta {{
-      display: grid;
-      gap: 12px;
-      padding: 28px;
-    }}
-    .meta strong {{
-      display: block;
-      margin-bottom: 4px;
-      font-size: 0.95rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--accent-dark);
-    }}
-    .grid {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 24px;
-    }}
-    .form-card, .jobs-card {{
-      padding: 24px;
-    }}
-    form {{
-      display: grid;
-      gap: 16px;
-    }}
-    label {{
-      display: grid;
-      gap: 8px;
-      font-size: 0.98rem;
-    }}
-    input, select {{
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 12px 14px;
-      font: inherit;
-      background: rgba(255, 255, 255, 0.88);
-    }}
-    .row {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-    }}
-    button {{
-      border: 0;
-      border-radius: 999px;
-      padding: 14px 18px;
-      font: inherit;
-      font-weight: 700;
-      color: white;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
-      cursor: pointer;
-    }}
-    .hint {{
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-    }}
-    .job-list {{
-      display: grid;
-      gap: 14px;
-    }}
-    .job-item {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 14px 16px;
-      background: rgba(255,255,255,0.7);
-    }}
-    .job-item a {{
-      color: inherit;
-      text-decoration: none;
-      display: block;
-    }}
-    .job-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 6px;
-      font-weight: 700;
-    }}
-    .job-meta {{
-      color: var(--muted);
-      font-size: 0.95rem;
-    }}
-    .badge {{
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      background: rgba(214, 106, 31, 0.12);
-      color: var(--accent-dark);
-      white-space: nowrap;
-    }}
-    @media (max-width: 860px) {{
-      .hero, .grid, .row {{
-        grid-template-columns: 1fr;
-      }}
-    }}
+{shared_styles}
   </style>
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <article class="card intro">
-        <h1>FZbot<br>Browser Desk</h1>
-        <p class="lede">Search and download TV series from a local browser UI while the same shared Python engine keeps powering the CLI underneath.</p>
-      </article>
-      <aside class="card meta">
-        <div>
-          <strong>Mode</strong>
-          <span>Local web UI over the async downloader</span>
-        </div>
-        <div>
-          <strong>Current scope</strong>
-          <span>Series downloads, queue tracking, live progress polling</span>
-        </div>
-        <div>
-          <strong>Still supported</strong>
-          <span>CLI remains available for scriptable usage</span>
-        </div>
-      </aside>
-    </section>
+  <header class="site-header">
+    <a class="brand" href="/">FZbot</a>
+    <span class="tagline">Mission Control</span>
+  </header>
 
-    <section class="grid">
-      <article class="card form-card">
-        <h2>Start a download</h2>
-        <form method="post" action="/jobs">
+  <main class="shell">
+    <div class="intro-lede">
+      <h1>Launch Center</h1>
+      <p>Configure and deploy a download mission. Track live progress as each transmission completes.</p>
+    </div>
+
+    <article class="card card-glow">
+      <h2>New Mission</h2>
+      <form method="post" action="/jobs">
+        <div class="form-section">
+          <p class="section-label">Target</p>
           <label>
             Title
             <input name="title" placeholder="e.g. Breaking Bad" required>
           </label>
-
           <div class="row">
             <label>
               Media type
@@ -326,45 +647,49 @@ INDEX_HTML = """<!DOCTYPE html>
               </select>
             </label>
             <label>
-              Concurrent downloads
-              <input type="number" name="concurrent" min="1" max="10" value="3">
+              Direct URL <span class="optional">optional</span>
+              <input name="url" placeholder="mobiletvshows URL">
             </label>
           </div>
-
-          <div class="row">
-            <label>
-              Season
-              <input type="number" name="season" min="1" placeholder="Optional">
-            </label>
-            <label>
-              Episode
-              <input type="number" name="episode" min="1" placeholder="Optional">
-            </label>
-          </div>
-
-          <div class="row">
-            <label>
-              Max downloads
-              <input type="number" name="max_downloads" min="1" value="10">
-            </label>
-            <label>
-              Direct series URL
-              <input name="url" placeholder="Optional mobiletvshows URL">
-            </label>
-          </div>
-
-          <button type="submit">Launch download job</button>
-        </form>
-        <p class="hint">The UI starts the work in the background, then opens a live status page that refreshes itself as each episode moves through the queue.</p>
-      </article>
-
-      <article class="card jobs-card">
-        <h2>Recent jobs</h2>
-        <div class="job-list">
-          {job_items}
         </div>
-      </article>
-    </section>
+
+        <div class="form-section">
+          <p class="section-label">Scope</p>
+          <div class="row">
+            <label>
+              Season <span class="optional">optional</span>
+              <input type="number" name="season" min="1" placeholder="All seasons">
+            </label>
+            <label>
+              Episode <span class="optional">optional</span>
+              <input type="number" name="episode" min="1" placeholder="All episodes">
+            </label>
+          </div>
+          <label>
+            Max downloads
+            <input type="number" name="max_downloads" min="1" value="10">
+          </label>
+        </div>
+
+        <div class="form-section">
+          <p class="section-label">Engine</p>
+          <label>
+            Concurrent downloads
+            <input type="number" name="concurrent" min="1" max="10" value="3">
+          </label>
+        </div>
+
+        <button class="btn-primary" type="submit">Launch Mission</button>
+      </form>
+      <p class="hint">Missions run in the background. You'll be redirected to a live telemetry page once the queue is initialized.</p>
+    </article>
+
+    <article class="card">
+      <h2>Recent Missions</h2>
+      <div class="mission-list">
+        {job_items}
+      </div>
+    </article>
   </main>
 </body>
 </html>
@@ -376,206 +701,55 @@ JOB_HTML = """<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} | FZbot Job</title>
+  <title>{title} | FZbot Mission</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Orbitron:wght@600;700&display=swap" rel="stylesheet">
   <style>
-    :root {{
-      --bg: #f7f1e8;
-      --ink: #1f2933;
-      --muted: #667085;
-      --card: rgba(255,255,255,0.88);
-      --line: rgba(31, 41, 51, 0.12);
-      --shadow: 0 18px 40px rgba(82, 47, 23, 0.12);
-      --accent: #d66a1f;
-      --accent-dark: #9b3d12;
-      --ok: #1f7a4f;
-      --bad: #b42318;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      background:
-        radial-gradient(circle at top right, rgba(214, 106, 31, 0.16), transparent 28%),
-        linear-gradient(180deg, #f8f3eb 0%, #efe3d1 100%);
-      color: var(--ink);
-    }}
-    .shell {{
-      max-width: 1040px;
-      margin: 0 auto;
-      padding: 36px 20px 56px;
-    }}
-    .topbar {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 24px;
-    }}
-    .topbar a {{
-      color: var(--accent-dark);
-      text-decoration: none;
-      font-weight: 700;
-    }}
-    .hero, .list {{
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: var(--shadow);
-      padding: 24px;
-    }}
-    .hero {{
-      margin-bottom: 24px;
-    }}
+{shared_styles}
     h1 {{
       margin: 0 0 10px;
-      font-size: clamp(2rem, 4vw, 3.4rem);
-      line-height: 1;
-      letter-spacing: -0.04em;
+      font-size: clamp(1.4rem, 3.5vw, 2rem);
+      color: var(--text-primary);
+      letter-spacing: 0.06em;
     }}
-    .summary {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 22px;
-    }}
-    .stat {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 14px;
-      background: rgba(255,255,255,0.75);
-    }}
-    .stat strong {{
-      display: block;
-      font-size: 1.4rem;
-    }}
-    .list-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 16px;
-    }}
-    .downloads {{
-      display: grid;
-      gap: 14px;
-    }}
-    .download {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 14px;
-      background: rgba(255,255,255,0.72);
-    }}
-    .download-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 8px;
-    }}
-    .status {{
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.82rem;
-      text-transform: capitalize;
-      background: rgba(214, 106, 31, 0.12);
-      color: var(--accent-dark);
-    }}
-    .status.completed {{
-      background: rgba(31, 122, 79, 0.12);
-      color: var(--ok);
-    }}
-    .status.failed {{
-      background: rgba(180, 35, 24, 0.12);
-      color: var(--bad);
-    }}
-    .status.cancelled {{
-      background: rgba(102, 112, 133, 0.16);
-      color: var(--muted);
-    }}
-    .status.paused {{
-      background: rgba(54, 123, 186, 0.14);
-      color: #1f4c7a;
-    }}
-    .controls {{
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 20px;
-    }}
-    .control {{
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 16px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-    }}
-    .control.pause {{
-      color: white;
-      background: linear-gradient(135deg, #367bba 0%, #1f4c7a 100%);
-    }}
-    .control.cancel {{
-      color: white;
-      background: linear-gradient(135deg, #b42318 0%, #7a1d14 100%);
-    }}
-    .control:disabled {{
-      opacity: 0.45;
-      cursor: not-allowed;
-    }}
-    .progress {{
-      height: 10px;
-      border-radius: 999px;
-      background: rgba(31, 41, 51, 0.08);
-      overflow: hidden;
-      margin: 8px 0;
-    }}
-    .bar {{
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent) 0%, #f1ac59 100%);
-      transition: width 0.25s ease;
-    }}
-    .meta {{
-      color: var(--muted);
-      font-size: 0.95rem;
-    }}
-    @media (max-width: 860px) {{
-      .summary {{
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }}
-      .download-head, .topbar, .list-head {{
-        flex-direction: column;
-        align-items: flex-start;
-      }}
+    #message {{
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
     }}
   </style>
 </head>
 <body>
-  <main class="shell">
+  <main class="shell wide">
     <div class="topbar">
-      <a href="/">Back to launcher</a>
-      <div id="job-state">{status_label}</div>
+      <a href="/">&larr; Mission Control</a>
+      <div class="live-indicator">
+        <span class="live-dot"></span>
+        <span>Live</span>
+      </div>
+      <div class="job-status-label" id="job-state">{status_label}</div>
     </div>
 
-    <section class="hero">
+    <section class="card card-glow">
       <h1>{title}</h1>
       <p id="message">{message}</p>
       <div class="summary">
-        <div class="stat"><span>Total files</span><strong id="count-total">0</strong></div>
+        <div class="stat"><span>Total</span><strong id="count-total">0</strong></div>
         <div class="stat"><span>Completed</span><strong id="count-completed">0</strong></div>
         <div class="stat"><span>Active</span><strong id="count-active">0</strong></div>
         <div class="stat"><span>Failed</span><strong id="count-failed">0</strong></div>
       </div>
       <div class="controls">
         <button id="pause-button" class="control pause" type="button">Pause</button>
-        <button id="cancel-button" class="control cancel" type="button">Cancel all</button>
+        <button id="cancel-button" class="control cancel" type="button">Abort Mission</button>
       </div>
     </section>
 
-    <section class="list">
+    <section class="card">
       <div class="list-head">
-        <h2>Episodes</h2>
-        <span class="meta">Page polls <code>/api/jobs/{job_id}</code> for live updates.</span>
+        <h2>Transmission Log</h2>
       </div>
       <div class="downloads" id="downloads"></div>
     </section>
@@ -597,8 +771,8 @@ JOB_HTML = """<!DOCTYPE html>
     }}
 
     function renderJob(data) {{
-      document.title = `${{data.title}} | FZbot Job`;
-      document.getElementById("job-state").textContent = `Status: ${{data.status}}`;
+      document.title = `${{data.title}} | FZbot Mission`;
+      document.getElementById("job-state").textContent = data.status;
       document.getElementById("message").textContent = data.message;
       document.getElementById("count-total").textContent = data.counts.total;
       document.getElementById("count-completed").textContent = data.counts.completed;
@@ -612,7 +786,7 @@ JOB_HTML = """<!DOCTYPE html>
 
       const root = document.getElementById("downloads");
       if (!data.downloads.length) {{
-        root.innerHTML = `<div class="download"><div class="meta">The queue is still being prepared.</div></div>`;
+        root.innerHTML = `<div class="download"><div class="meta">Initializing transmission queue&hellip;</div></div>`;
         return;
       }}
 
@@ -625,7 +799,7 @@ JOB_HTML = """<!DOCTYPE html>
           <div class="progress"><div class="bar" style="width: ${{item.progress_percent}}%"></div></div>
           <div class="meta">
             ${{formatBytes(item.downloaded_bytes)}} / ${{formatBytes(item.total_bytes)}}
-            ${{item.detail ? ` • ${{item.detail}}` : ""}}
+            ${{item.detail ? ` &bull; ${{item.detail}}` : ""}}
           </div>
         </article>
       `).join("");
@@ -654,7 +828,7 @@ JOB_HTML = """<!DOCTYPE html>
       try {{
         await sendControl("cancel");
       }} catch (error) {{
-        document.getElementById("message").textContent = `Cancel failed: ${{error.message}}`;
+        document.getElementById("message").textContent = `Abort failed: ${{error.message}}`;
       }}
     }});
 
@@ -670,7 +844,7 @@ JOB_HTML = """<!DOCTYPE html>
           setTimeout(poll, 1200);
         }}
       }} catch (error) {{
-        document.getElementById("message").textContent = `Polling failed: ${{error.message}}`;
+        document.getElementById("message").textContent = `Telemetry link lost: ${{error.message}}`;
         setTimeout(poll, 2500);
       }}
     }}
@@ -691,36 +865,41 @@ def _to_int(raw: str | None) -> int | None:
 def _render_index(store: JobStore) -> str:
     job_items = []
     for job in reversed(list(store.jobs.values())[-8:]):
+        status_class = job.status.replace(" ", "_")
         job_items.append(
             """
-            <article class="job-item">
+            <article class="mission-card">
               <a href="/jobs/{job_id}">
-                <div class="job-head">
+                <div class="mission-head">
                   <span>{title}</span>
-                  <span class="badge">{status}</span>
+                  <span class="status-badge {status_class}">{status}</span>
                 </div>
-                <div class="job-meta">Season: {season} • Episode: {episode} • Concurrency: {concurrent}</div>
+                <div class="mission-meta">S{season} &bull; E{episode} &bull; {concurrent} threads</div>
               </a>
             </article>
             """.format(
                 job_id=job.job_id,
                 title=job.title,
                 status=job.status,
+                status_class=status_class,
                 season=job.season or "all",
                 episode=job.episode or "all",
                 concurrent=job.concurrent,
             )
         )
     if not job_items:
-        job_items.append('<div class="job-item"><div class="job-meta">No jobs yet. Start one from the form.</div></div>')
-    return INDEX_HTML.format(job_items="".join(job_items))
+        job_items.append(
+            '<div class="mission-card"><div class="mission-meta">No missions yet. Configure and launch one above.</div></div>'
+        )
+    return INDEX_HTML.format(shared_styles=SHARED_STYLES, job_items="".join(job_items))
 
 
 def _render_job(job: BrowserJob) -> str:
     return JOB_HTML.format(
+        shared_styles=SHARED_STYLES,
         title=job.title,
         message=job.message,
-        status_label=f"Status: {job.status}",
+        status_label=job.status,
         job_id=job.job_id,
         job_json=json.dumps(job.job_id),
     )
