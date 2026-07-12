@@ -10,7 +10,7 @@ class AppConfig:
     max_downloads: int | None = None
     specific_episode: int | None = None
     url: str | None = None
-    concurrent_downloads: int = 3
+    concurrent_downloads: int = 5
     request_timeout_seconds: int | None = None
     titles: list[str] = field(default_factory=list)
 
