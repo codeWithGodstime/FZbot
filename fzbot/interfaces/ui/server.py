@@ -2,14 +2,15 @@ import asyncio
 import json
 import logging
 import uuid
+import webbrowser
 from dataclasses import dataclass, field
 from typing import Any
 
 from aiohttp import web
 
-from app.core.config import AppConfig
-from app.core.models import DownloadEvent
-from app.core.orchestrator import DownloadOrchestrator
+from fzbot.core.config import AppConfig
+from fzbot.core.models import DownloadEvent
+from fzbot.core.orchestrator import DownloadOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -1136,4 +1137,12 @@ def create_app() -> web.Application:
 
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     logging.basicConfig(level=logging.INFO)
-    web.run_app(create_app(), host=host, port=port)
+    url = f"http://{host}:{port}/"
+    app = create_app()
+
+    async def _open_browser(_app: web.Application) -> None:
+        await asyncio.sleep(0.3)
+        webbrowser.open(url)
+
+    app.on_startup.append(_open_browser)
+    web.run_app(app, host=host, port=port)
