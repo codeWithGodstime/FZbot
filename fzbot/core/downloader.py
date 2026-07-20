@@ -7,7 +7,7 @@ import aiofiles
 import aiohttp
 from tqdm.asyncio import tqdm
 
-from app.core.models import DownloadEvent, DownloadItem
+from fzbot.core.models import DownloadEvent, DownloadItem
 
 logger = logging.getLogger(__name__)
 

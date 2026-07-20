@@ -6,8 +6,8 @@ from urllib.parse import quote_plus
 import aiohttp
 from bs4 import BeautifulSoup
 
-from app.core.config import AppConfig
-from app.core.models import DownloadItem
+from fzbot.core.config import AppConfig
+from fzbot.core.models import DownloadItem
 
 logger = logging.getLogger(__name__)
 

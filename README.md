@@ -6,88 +6,74 @@ FZBot Downloader helps you effortlessly download films and TV shows directly fro
 
 ### Key Features
 
-- Download movies and TV shows with minimal input. 
-
-- Automatic URL parsing to simplify the download process. 
-
+- Download movies and TV shows with minimal input.
+- Automatic URL parsing to simplify the download process.
 - Resume interrupted downloads seamlessly. Lightweight and cross-platform support (Windows, macOS, Linux).
-
 - Concurrent downloads
-
-### Demo
-
-![Live Demo](https://taskmaster-demo.com)
+- Local web UI mode (`fzbot ui`)
 
 ### Installation
 
-- Clone the repository
-  
-  ```bash
-  git clone https://github.com/codeWithGodstime/FZbot
-  ```
-
-- Create virtual environment and install dependencies
-  
-  ```bash
-  cd FZbot && virtualenv venv && pip install -r requirements.txt
-  ```
+```bash
+git clone https://github.com/codeWithGodstime/FZbot
+cd FZbot
+pip install -e .
+```
 
 ### Usage
 
-Basic Usage
+Downloads are saved to `~/Videos/fzbot/<title>/` by default (or `~/Movies/fzbot/` on macOS). Use `--output` to override.
 
 ```bash
-python fzbot.py [type] [title] [-ns NUMBER_OF_SEASONS] [-ne NUMBER_OF_EPISODES]
+fzbot movie "Inception"
+fzbot series "Breaking Bad" --season 2 --episode 10
+fzbot movie "Inception" --output /mnt/media/downloads
+fzbot ui --port 8080
 ```
 
-### Arguments:
+### Arguments
 
 1. **Positional Arguments** (Required):
-   
    - **`type`**: Specify whether you want to download a movie or a series.
      - Choices: `movie`, `series`
-     - Example: `movie` for films or `series` for TV shows.
    - **`title`**: Name of the movie or series you want to download.
-     - Example: `"Breaking Bad"` or `"Inception"`
 
-2. **Optional Arguments** (Optional):
-   
-   - **`-ns`, `--number_of_seasons`**:
-     
-     - Specify the number of seasons to download (for series only).
-     - Default: `1`
-     - Example: `--number_of_seasons 2` to download 2 seasons.
-   
-   - **`-ne`, `--number_of_episodes`**:
-     
-     - Specify the number of episodes to download (for series only).
-     - Default: `1`
-     - Example: `--number_of_episodes 5` to download 5 episodes.
-       
-### Examples:
+2. **Optional Arguments**:
+   - **`--season`**: Specify the season to download (for series only).
+   - **`--episode`**: Specify a single episode to download (for series only).
+   - **`--max_downloads`**: Limit the number of episodes or movies to download (default: 10).
+   - **`--concurrent`**: Number of concurrent downloads (default: 3).
+   - **`--output`**: Directory to save downloads (default: `~/Videos/fzbot`).
+   - **`--url`**: Direct URL for a single movie or series.
+
+### Examples
 
 1. **Download a Movie**:
-   
+
    ```bash
-   python fzbot.py movie "Inception"
+   fzbot movie "Inception"
    ```
 
-2. **Download a TV Series (Default 1 season, 1 episode)**:
-   
+2. **Download a TV Series**:
+
    ```bash
-   python fzbot.py series "Breaking Bad"
+   fzbot series "Breaking Bad"
    ```
 
-3. **Download Multiple Seasons of a TV Series**:
-   
+3. **Download a Specific Season**:
+
    ```bash
-   python fzbot.py series "Breaking Bad" -ns 2
+   fzbot series "Breaking Bad" --season 2
    ```
 
-4. **Download Multiple Episodes of a TV Series**:
-   
+4. **Download a Specific Episode**:
+
    ```bash
-   python fzbot.py series "Breaking Bad" -ns 1 -ne 10
+   fzbot series "Breaking Bad" --season 1 --episode 10
    ```
-   
-   
+
+5. **Run the Web UI**:
+
+   ```bash
+   fzbot ui
+   ```

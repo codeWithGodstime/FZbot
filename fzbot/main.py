@@ -1,4 +1,4 @@
-from app.interfaces.cli.commands import entry
+from fzbot.interfaces.cli.commands import entry
 
 
 if __name__ == "__main__":

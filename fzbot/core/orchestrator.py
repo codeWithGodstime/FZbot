@@ -4,10 +4,10 @@ from collections.abc import Callable
 
 import aiohttp
 
-from app.core.config import AppConfig
-from app.core.downloader import DownloadManager
-from app.core.models import DownloadEvent, DownloadItem
-from app.core.scraper import MovieScraper, SeriesScraper
+from fzbot.core.config import AppConfig
+from fzbot.core.downloader import DownloadManager
+from fzbot.core.models import DownloadEvent, DownloadItem
+from fzbot.core.scraper import MovieScraper, SeriesScraper
 
 logger = logging.getLogger(__name__)
 

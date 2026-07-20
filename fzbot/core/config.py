@@ -1,5 +1,8 @@
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from fzbot.core.paths import default_download_root
 
 
 @dataclass(slots=True)
@@ -13,10 +16,12 @@ class AppConfig:
     concurrent_downloads: int = 5
     request_timeout_seconds: int | None = None
     titles: list[str] = field(default_factory=list)
+    download_root: Path | None = None
 
     @property
     def output_dir(self) -> str:
-        return self.title
+        root = self.download_root or default_download_root()
+        return str(root / self.title)
 
     @property
     def movie_titles(self) -> list[str]:

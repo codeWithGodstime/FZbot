@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fzbot"
+version = "0.1.0"
+description = "CLI and web UI downloader for FZmovies and MobileTVShows"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp>=3.10",
+    "aiofiles>=24.1",
+    "beautifulsoup4>=4.12",
+    "tqdm>=4.66",
+]
+
+[project.scripts]
+fzbot = "fzbot.interfaces.cli.commands:entry"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fzbot*"]

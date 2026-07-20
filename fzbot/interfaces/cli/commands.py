@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 
 def build_cli_parser() -> argparse.ArgumentParser:
@@ -48,6 +49,12 @@ def build_cli_parser() -> argparse.ArgumentParser:
         default=3,
         help="Set the number of concurrent downloads",
     )
+    parser.add_argument(
+        "-output",
+        "--output",
+        type=str,
+        help="Directory to save downloads (default: ~/Videos/fzbot)",
+    )
     return parser
 
 
@@ -72,7 +79,9 @@ def build_root_parser() -> argparse.ArgumentParser:
 
 
 def _build_config(arguments: argparse.Namespace) -> "AppConfig":
-    from app.core.config import AppConfig
+    from fzbot.core.config import AppConfig
+
+    download_root = Path(arguments.output) if arguments.output else None
 
     if arguments.type == "movie":
         titles = AppConfig._dedupe_titles(arguments.title)
@@ -84,6 +93,7 @@ def _build_config(arguments: argparse.Namespace) -> "AppConfig":
             concurrent_downloads=arguments.concurrent,
             request_timeout_seconds=None,
             titles=titles,
+            download_root=download_root,
         )
 
     return AppConfig(
@@ -95,11 +105,12 @@ def _build_config(arguments: argparse.Namespace) -> "AppConfig":
         url=arguments.url,
         concurrent_downloads=arguments.concurrent,
         request_timeout_seconds=None,
+        download_root=download_root,
     )
 
 
 async def run_cli(arguments: argparse.Namespace) -> None:
-    from app.core.orchestrator import DownloadOrchestrator
+    from fzbot.core.orchestrator import DownloadOrchestrator
 
     config = _build_config(arguments)
     orchestrator = DownloadOrchestrator(config=config)
@@ -119,7 +130,7 @@ def entry() -> None:
     arguments = parser.parse_args()
 
     if arguments.command == "ui":
-        from app.interfaces.ui.server import run_server
+        from fzbot.interfaces.ui.server import run_server
 
         run_server(host=arguments.host, port=arguments.port)
         return
